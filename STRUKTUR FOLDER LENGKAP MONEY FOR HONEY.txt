@@ -1,0 +1,26 @@
+STRUKTUR FOLDER LENGKAP MONEY FOR HONEY 
+=======================================
+
+money_for_honey/
+├── .env
+├── .gitignore
+├── requirements.txt
+├── run_bot.py
+├── package.json
+├── public/
+│   └── _redirects
+└── backend/
+    ├── run_bot.py
+    └── app/
+        ├── core/
+        │   └── config.py
+        └── services/             <--- [LETAKKAN DI DALAM FOLDER INI]
+            ├── risk_manager.py   <--- File 1
+            ├── vault_manager.py  <--- File 2
+            ├── telegram_bot.py   <--- File 3
+            ├── bot_engine.py
+            ├── binance_client.py
+            ├── notifier.py
+            ├── profit_manager.py
+            ├── signal_generator.py
+            └── strategy_engine.py
