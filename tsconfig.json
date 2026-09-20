@@ -24,5 +24,6 @@
     "noEmit": true,
     "strict": false,
     "noImplicitAny": false
-  }
+  },
+  "include": ["src"]
 }
