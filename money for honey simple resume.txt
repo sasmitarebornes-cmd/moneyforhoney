@@ -1,0 +1,417 @@
+WHATSAPP_API_URL=https://graph.facebook.com/v18.0/+62......./messages
+WHATSAPP_PHONE_NUMBER=+62.........
+WHATSAPP_API_TOKEN=
+
+
+Ya, Anda bisa mendapatkannya secara 100% GRATIS.
+
+Meta (Facebook) menyediakan Meta WhatsApp Cloud API (Free Tier) dengan kuota 1.000 percakapan gratis setiap bulan.
+⚠️ Catatan Format Penting:
+
+Perhatikan bahwa format URL WhatsApp Cloud API bukan nomor HP Anda di URL-nya, melainkan PHONE_NUMBER_ID (ID angka dari dashboard Meta):
+
+    Format Benar: https://graph.facebook.com/v18.0/<PHONE_NUMBER_ID>/messages
+
+    Format No. HP (WHATSAPP_PHONE_NUMBER): Gunakan kode negara tanpa tanda plus atau spasi, contoh: 6281234567890.
+
+📋 Cara Mendapatkan Nilai .env WhatsApp dari Meta (Langkah Demi Langkah):
+1. Buat / Login ke Meta for Developers
+
+    Kunjungi: developers.facebook.com
+
+    Login dengan akun Facebook Anda.
+
+    Klik tombol My Apps di kanan atas ➔ Klik Create App (Buat Aplikasi).
+
+    Pilih tipe: Other ➔ lalu pilih Business ➔ Beri nama aplikasi (misal: Honey Trading Alert) ➔ Klik Create App.
+
+2. Tambahkan Produk WhatsApp
+
+    Di halaman dashboard aplikasi Meta, gulir ke bawah dan cari kartu WhatsApp.
+
+    Klik tombol Set up.
+
+    Di menu sidebar kiri, pilih WhatsApp ➔ API Setup (atau Getting Started).
+
+3. Salin Nilai-Nilai untuk .env
+
+Di halaman API Setup, Anda akan langsung melihat data berikut:
+
+    WHATSAPP_API_URL:
+
+        Lihat bagian Phone number ID (berupa deretan angka, misal: 109283746501928).
+
+        Pasang di .env:
+        code Env
+
+        WHATSAPP_API_URL=https://graph.facebook.com/v18.0/109283746501928/messages
+
+    WHATSAPP_PHONE_NUMBER:
+
+        Di bagian "To" (Recipient Phone Number), klik Manage phone number list lalu masukkan nomor WhatsApp pribadi Anda (misal +62 812-XXXX-XXXX) dan verifikasi kode OTP 6-digit yang dikirim Meta ke WhatsApp Anda.
+
+        Pasang di .env (tanpa tanda +):
+        code Env
+
+        WHATSAPP_PHONE_NUMBER=6281234567890
+
+    WHATSAPP_API_TOKEN:
+
+        Salin kode panjang di kotak Temporary Access Token (atau buat Permanent System User Token di Meta Business Manager jika ingin token yang tidak kadaluarsa dalam 24 jam).
+
+        Pasang di .env:
+        code Env
+
+        WHATSAPP_API_TOKEN=EAABw...panjang_sekali...
+
+💡 Alternatif yang Lebih Praktis & 100% Gratis: CallMeBot WhatsApp
+
+Jika pendaftaran Meta Developer terasa rumit karena membutuhkan akun Business, Anda juga bisa menggunakan gateway gratis CallMeBot WhatsApp:
+
+    Simpan nomor WhatsApp CallMeBot: +34 941 01 96 50 di HP Anda.
+
+    Kirim pesan ini ke nomor tersebut:
+    code Text
+
+    I allow callmebot to send me messages
+
+    CallMeBot akan membalas dengan apikey Anda.
+
+🐝 Rekomendasi
+
+    Telegram Bot yang sudah Anda aktifkan sebelumnya sudah 100% gratis, unlimited, responsif dengan tombol inline, dan tanpa batasan token 24 jam.
+
+    Fitur WhatsApp di sistem ini utamanya difungsikan sebagai Saluran Darurat Sekunder (Redundant Emergency Alert) jika sirkuit darurat (Circuit Breaker) tersandung saat Anda jauh dari Telegram. Jika tidak diisi, sistem tetap berjalan aman melalui Telegram Notifier.
+
+Cara 1: Nomor CallMeBot Resmi Terbaru (Aktif)
+
+CallMeBot saat ini menyediakan tautan langsung (direct link) agar Anda tidak perlu mengetik nomor secara manual:
+
+    Buka halaman resmi mereka di browser: callmebot.com/uncategorized/free-api-whatsapp-messages/
+
+    Di halaman tersebut, klik tombol/tautan "Click here to get your API Key" atau simpan nomor yang tercantum di web resmi mereka (saat ini nomor cadangan aktif adalah: +34 944 58 10 50 atau +34 941 01 96 50).
+
+    Kirim pesan persis:
+    code Text
+
+    I allow callmebot to send me messages
+
+    Bot akan langsung membalas dalam hitungan detik dengan API Key Anda, contoh: apikey=123456.
+
+Cara 2: Jalur Resmi Meta WhatsApp Cloud API (Paling Stabil & Tidak Pernah Berubah)
+
+Jalur resmi dari Meta (Facebook) tidak akan pernah berganti nomor karena menggunakan server Meta langsung:
+
+    Buka developers.facebook.com dan login dengan Facebook.
+
+    Klik My Apps ➔ Create App ➔ Pilih Other ➔ Business.
+
+    Di dalam dashboard, klik Set up pada kotak WhatsApp.
+
+    Buka menu API Setup:
+
+        Phone Number ID: Salin angka yang tertera (misal: 105938472910294) ➔ jadikan WHATSAPP_API_URL=https://graph.facebook.com/v18.0/105938472910294/messages
+
+        Temporary Token: Salin token panjang ➔ jadikan WHATSAPP_API_TOKEN
+
+        Recipient Number: Masukkan nomor HP Anda (format: 6281234567890) ➔ jadikan WHATSAPP_PHONE_NUMBER
+
+💡 Alternatif Tambahan: Fonnte (Layanan Lokal Indonesia — Free Tier)
+
+Jika Anda ingin gateway lokal Indonesia yang sangat mudah setup-nya (cukup scan QR WhatsApp Anda sendiri):
+
+    Daftar gratis di fonnte.com.
+
+    Sambungkan WhatsApp dengan scan QR di dashboard Fonnte.
+
+    Anda akan langsung mendapatkan Token API gratis.
+
+Menjadikan channel Telegram t.me/HoneyForHoneyOfficial sebagai bagian integral dari sistem MONEY For HONEY adalah langkah yang sangat tepat.
+
+Berikut adalah analisis strategi fungsi, arsitektur pembagian peran, serta panduan integrasi teknisnya:
+🏛️ 1. Arsitektur Pembagian Peran: Private DM vs Official Channel
+
+Untuk menjaga keamanan dan profesionalitas, sistem menerapkan pemisahan tugas (Separation of Concerns):
+code Code
+
+┌────────────────────────────────────────────────────────┐
+                               │       MONEY For HONEY Autonomous Trading Core          │
+                               └──────────────────────────┬─────────────────────────────┘
+                                                          │
+                       ┌──────────────────────────────────┴──────────────────────────────────┐
+                       │                                                                     │
+                       ▼                                                                     ▼
+       ┌───────────────────────────────┐                             ┌───────────────────────────────┐
+       │   Private ChatOps (Bot DM)    │                             │  Official Broadcast Channel   │
+       │     (Operator / Admin Only)   │                             │  (@HoneyForHoneyOfficial)     │
+       ├───────────────────────────────┤                             ├───────────────────────────────┤
+       │ 🔒 Remote Command Control     │                             │ 📢 Real-time Trade Signals    │
+       │ 🚨 Emergency Circuit Breaker  │                             │ 🍯 Proof of Profit & Harvest  │
+       │ 🛑 Liquidate / Close Trades   │                             │ 🏦 Proof of Vault Staking     │
+       │ ⚡ Alpha Scan Confluence      │                             │ 📊 Institutional Market Pulse │
+       └───────────────────────────────┘                             └───────────────────────────────┘
+
+    Private Chat / DM (Operator Control Center):
+
+        Tempat Anda mengeksekusi kendali interaktif (Emergency Stop, Liquidate All, Reset Breaker).
+
+        Bersifat rahasia dan diproteksi otorisasi Chat ID.
+
+    Official Channel (@HoneyForHoneyOfficial):
+
+        Feed Transparansi & Sinyal Publik / Komunitas: Menyiarkan sinyal eksekusi otomatis, bukti profit waterfall, dan alokasi passive staking secara real-time.
+
+💡 2. Empat Fungsi Strategis Channel Telegram
+
+    🚀 Institutional Trade Execution Signals:
+
+        Setiap kali bot membuka posisi, detail sinyal otomatis disiarkan ke channel:
+
+            Pair, Side (BUY/SELL), Entry Price, Strict 1.5% Risk Cap, Stop Loss, & Take Profit.
+
+    🍯 Proof of Compounding & Profit Waterfall:
+
+        Setiap posisi yang ditutup profit menyiarkan bukti transparansi pembagian dana:
+
+            5% Platform Reserve, 70% Reinvestment ke Trading, 30% Auto-Deposit ke Vault.
+
+    🔒 Binance Simple Earn Staking Announcements:
+
+        Menyiarkan konfirmasi bahwa modal idle telah berhasil di-sweep ke staking berbunga tinggi (Zero Cash Drag).
+
+    📢 Manual / One-Click Broadcast dari Tombol Bot:
+
+        Anda dapat membagikan rangkuman status terkini ke channel kapan saja hanya dengan menekan tombol [ 📢 Broadcast to Channel ] di konsol bot.
+
+⚙️ 3. Langkah Integrasi & Konfigurasi
+Langkah A: Tambahkan Konfigurasi Channel di .env
+
+Buka file .env di VS Code Anda dan tambahkan / pastikan baris berikut:
+code Env
+
+TELEGRAM_BOT_TOKEN=8679090680:AAHG...
+TELEGRAM_CHAT_ID=6743953496
+TELEGRAM_CHANNEL_ID=@HoneyForHoneyOfficial
+
+(Catatan: TELEGRAM_CHANNEL_ID bisa diisi username channel @HoneyForHoneyOfficial atau angka ID channel).
+Langkah B: Pastikan Permission Bot di Channel Telegram
+
+    Buka channel t.me/HoneyForHoneyOfficial di aplikasi Telegram.
+
+    Masuk ke Channel Settings (Edit Channel) ➔ Administrators.
+
+    Pastikan bot Anda (@MoneyForHoneyyBot) memiliki izin:
+
+        ✅ Post Messages (Wajib)
+
+        ✅ Edit Messages
+
+🧪 4. Cara Menjalankan & Menguji Broadcast ke Channel
+
+    Di terminal VS Code, jalankan bot:
+    code Powershell
+
+    python run_bot.py
+
+    Buka private chat dengan bot Anda di Telegram dan ketik:
+    code Text
+
+    /menu
+
+    Klik tombol baru: [ 📢 Broadcast to Channel ].
+
+    Buka channel @HoneyForHoneyOfficial — Pesan telemetri resmi dari sistem trading Anda akan langsung terbit secara otomatis!
+
+Penyebab tombol [ 📢 Broadcast to Channel ] belum muncul pada screenshot Anda adalah karena proses script python run_bot.py di terminal VS Code Anda masih menjalankan versi lama yang tersimpan di memori (RAM) saat dijalankan pada pukul 03:50 AM.
+
+File backend dan kode tombol barunya sudah selesai diperbarui. Python memerlukan restart agar memuat perubahan kode terbaru tersebut.
+🔄 Cara Merestart Bot di VS Code:
+
+    Klik pada jendela Terminal di VS Code tempat python run_bot.py sedang berjalan.
+
+    Tekan tombol Ctrl + C pada keyboard untuk menghentikan bot yang sedang aktif.
+
+    Jalankan kembali dengan mengetik:
+    code Powershell
+
+    python run_bot.py
+
+    Setelah muncul log 🚀 Polling loop started!, buka kembali Telegram Anda dan ketik:
+    code Text
+
+    /menu
+
+📱 Tampilan Baru yang Akan Muncul di Telegram:
+
+Setelah di-restart, menu bot Anda akan memiliki susunan tombol terbaru berikut:
+code Code
+
+┌──────────────────────────┬──────────────────────────┐
+│    📊 Live Telemetry     │     📈 Active Trades     │
+├──────────────────────────┼──────────────────────────┤
+│    🏦 Vault & Harvest    │     ⚡ Radar Signals     │
+├──────────────────────────┼──────────────────────────┤
+│ 📢 Broadcast to Channel  │     📖 Manual / Help     │  <-- [BARU DITAMBAHKAN]
+├──────────────────────────┼──────────────────────────┤
+│    🚨 Emergency Stop     │     ✅ Resume Engine     │
+├──────────────────────────┴──────────────────────────┤
+│               🛑 Close All Trades                   │
+└─────────────────────────────────────────────────────┘
+
+Saat Anda menekan tombol [ 📢 Broadcast to Channel ], bot akan langsung mengirimkan status telemetri dan performa trading terbaru ke channel @HoneyForHoneyOfficial secara instan.
+
+Setelah memeriksa file notifier.py yang Anda lampirkan, ada 1 masalah logika utama (bug) yang menyebabkan notifikasi otomatis hanya terkirim ke satu tempat dan tidak pernah masuk ke channel Telegram:
+❌ Masalah pada Kode Lama:
+
+Perhatikan baris 29 pada kode lama Anda:
+code Python
+
+chat_id = target_chat_id or self.telegram_chat_id or self.telegram_channel_id
+
+Mengapa ini bermasalah:
+Karena sifat operator or di Python (Short-Circuit Evaluation), ketika self.telegram_chat_id (Private Chat ID Operator Anda) sudah terisi, Python akan langsung mengambil nilai tersebut dan mengabaikan self.telegram_channel_id (Channel @HoneyForHoneyOfficial). Akibatnya, notifikasi trading hanya terkirim ke DM pribadi dan tidak pernah disiarkan ke channel.
+✅ Perbaikan yang Telah Dilakukan di backend/app/services/notifier.py:
+
+    Dual-Channel Simultaneous Dispatch (Multi-Target):
+    Metode send_telegram_message() kini mengirim pesan ke KEDUA target sekaligus secara paralel:
+
+        ✅ Private Operator DM (TELEGRAM_CHAT_ID)
+
+        ✅ Official Community Channel (@HoneyForHoneyOfficial)
+
+        Jika salah satu target mengalami kendala, target lainnya tetap menerima pesan tanpa terganggu.
+
+    Rich Institutional Formatting & Channel Branding:
+    Setiap sinyal entri trading (notify_trade_opened), panen keuntungan (profit waterfall), dan staking vault kini menyertakan:
+
+        Format HTML rapi dengan ikon warna status (🟢 Long / 🔴 Short).
+
+        Tautan langsung ke channel Telegram: 📢 t.me/HoneyForHoneyOfficial.
+
+    Fallback Resilient:
+    Jika variabel TELEGRAM_CHANNEL_ID di .env belum diisi, sistem otomatis menggunakan default @HoneyForHoneyOfficial.
+
+    Fitur Instant Self-Test:
+    Menambahkan blok __main__ sehingga Anda bisa langsung menguji broadcast ke channel kapan saja dengan perintah cepat di terminal:
+    code Powershell
+
+    python backend/app/services/notifier.py
+
+🧪 Cara Menjalankan Uji Coba Sinyal Langsung ke Channel:
+
+Untuk membuktikan bahwa channel Anda sudah menerima notifikasi secara otomatis:
+
+    Di terminal VS Code, jalankan:
+    code Powershell
+
+    python backend/app/services/notifier.py
+
+    Buka channel @HoneyForHoneyOfficial — Sinyal tes eksekusi BTC/USDT instan dengan kalkulasi resiko 1.5% akan langsung muncul di channel Anda!
+
+Ketika sistem sudah berjalan (running) dalam mode Real & Live Trading, seluruh notifikasi akan otomatis dikirimkan seketika (real-time) ke Telegram Channel tanpa perlu klik manual.
+🔄 Bagaimana Alur Otomatisnya Bekerja?
+
+Setiap kali bot trading mendeteksi peristiwa di market, modul notifier.py akan otomatis menyiarkan pesan ke Private DM Operator dan Telegram Channel secara bersamaan:
+
+    Eksekusi Sinyal & Pembukaan Posisi (Trade Opened):
+
+        Begitu strategi kuantitatif membuka posisi (misal: Buy BTC, Take Profit, Stop Loss), notifikasi sinyal lengkap langsung otomatis terkirim ke channel.
+
+    Panen Profit (Profit Waterfall & Reinvestment):
+
+        Saat posisi ditutup dengan profit dan sistem membagi hasil (70% reinvestasi trading, 30% tabungan vault), ringkasannya otomatis terkirim ke channel.
+
+    Auto-Sweep ke Binance Simple Earn (Vault Staked):
+
+        Ketika sisa dana USDT disapu ke produk earn dengan yield harian, buktinya langsung tersiar ke channel.
+
+    Proteksi Darurat (Circuit Breaker):
+
+        Jika batas risiko harian (drawdown cap) tersentuh, bot otomatis menyiarkan status penghentian darurat.
+
+💡 Jadi, Apa Fungsi Tombol [ 📢 Broadcast to Channel ] di Menu?
+
+Tombol tersebut adalah fitur on-demand (manual) khusus untuk Anda sebagai Operator jika sewaktu-waktu ingin mengirimkan laporan ringkasan berkala (health check & current status) ke audiens/komunitas di channel tanpa menunggu adanya trade baru.
+
+Kesimpulan:
+Semua aktivitas trading harian Anda sudah 100% otomatis tersiar secara hands-free ke channel @MoneyForHoneyOfficial! 🎉
+
+Pilihan yang SANGAT BAGUS dan SANGAT PRAKTIS! 🎯
+
+Platform fps.ms (Pterodactyl-based Bot/App Hosting) sangat populer dan dirancang khusus untuk menjalankan bot Python/Node.js secara 24/7 tanpa perlu kartu kredit (No credit card required).
+
+Berikut adalah kelebihan, cara kerja, dan panduan langkah demi langkah untuk men-deploy bot Anda di fps.ms:
+🌟 Mengapa fps.ms Sangat Cocok untuk Bot Anda:
+
+    Gratis Tanpa Kartu Kredit: Sesuai yang tertulis di dashboard Anda: "Get a game server, Discord/Telegram bot, or web app running in under 60 seconds. No credit card required".
+
+    Control Panel Sangat Bersih & Mudah: Menggunakan panel Pterodactyl dengan fitur:
+
+        Live Console Terminal (bisa melihat log trading & bot secara real-time).
+
+        File Manager bawaan (bisa upload file atau clone dari GitHub).
+
+        Auto-Restart: Jika bot mengalami error/crash atau server reboot, sistem akan otomatis menyalakan bot kembali.
+
+    Cocok untuk Python Background Worker: Sangat pas untuk menjalankan script run_bot.py.
+
+🚀 Panduan Langkah-Langkah Deploy di fps.ms:
+Langkah 1: Buat Server Bot Baru
+
+    Pada dashboard fps.ms Anda, klik tombol + Create (warna pink di kanan atas) atau Deploy.
+
+    Pilih kategori: Discord / Telegram Bot atau Generic Python (pilih versi Python 3.10 / 3.11).
+
+    Pilih paket Free Tier / Free Server.
+
+    Beri nama server, misalnya: money-for-honey-bot.
+
+    Klik Create / Deploy.
+
+Langkah 2: Upload / Setup File Proyek
+
+    Buka server yang baru saja dibuat, masuk ke tab File Manager.
+
+    Upload file utama Anda:
+
+        run_bot.py
+
+        requirements.txt (daftar library python)
+
+        .env (berisi TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_CHANNEL_ID, BINANCE_API_KEY, dll)
+
+        Folder backend (jika menggunakan struktur backend lengkap).
+
+    Pastikan isi requirements.txt minimal memuat:
+    code Text
+
+    httpx>=0.27.0
+    python-dotenv>=1.0.0
+    pydantic>=2.0.0
+    pydantic-settings>=2.0.0
+
+Langkah 3: Tentukan Perintah Start (Startup Command)
+
+    Masuk ke tab Startup di panel fps.ms.
+
+    Di bagian Startup Command / Main File, pastikan mengarah ke:
+    code Bash
+
+    python run_bot.py
+
+Langkah 4: Nyalakan Bot (Start Server)
+
+    Masuk ke tab Console.
+
+    Klik tombol Start (Warna Hijau).
+
+    Anda akan melihat log langsung di console:
+    code Text
+
+    [INFO] bot_runner: ✅ Authenticated as: Money For Honey (@MoneyForHoneyyBot)
+    [INFO] bot_runner: 📋 Telegram Bot Menu Commands registered successfully!
+    [INFO] bot_runner: 🚀 Polling loop started! Interactive buttons active.
+
+    Selesai! 🎉 Bot Telegram dan auto-broadcast channel Anda sekarang sudah resmi berjalan 24/7 di cloud fps.ms tanpa membebani laptop Anda!
+
+

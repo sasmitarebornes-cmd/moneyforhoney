@@ -1,0 +1,6 @@
+{
+  "name": "MONEY For HONEY",
+  "description": "autonomous Trading system and build self wealth engine for the future",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

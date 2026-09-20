@@ -1,0 +1,123 @@
+Penyebab utama bot Telegram tidak merespon biasanya berasal dari salah satu hal berikut:
+
+    Konflik Webhook vs Long-Polling (Error 409 Conflict): Telegram Bot API melarang metode getUpdates (long-polling) jika bot pernah dipasangi URL Webhook sebelumnya. Telegram harus di-reset terlebih dahulu via deleteWebhook.
+
+    Kredensial .env Belum Terisi/Terbaca: Variabel TELEGRAM_BOT_TOKEN atau TELEGRAM_CHAT_ID belum dimasukkan ke dalam file .env.
+
+    Proses Bot Belum Dijalankan sebagai Daemon: Skrip Python perlu dieksekusi secara aktif agar terus mendengarkan (listen) pesan masuk.
+
+🛠️ Solusi yang Telah Diterapkan
+
+File run_bot.py yang lengkap dan production-ready telah dibuat di folder proyek Anda dengan kemampuan:
+
+    Auto-Clear Webhook: Secara otomatis menghapus webhook lama saat startup sehingga tidak terjadi konflik 409.
+
+    Resilient Long-Polling (getUpdates): Berjalan secara real-time tanpa memerlukan port publik, domain, atau sertifikat SSL.
+
+    Integrasi ChatOps Penuh: Terkoneksi langsung ke logika backend trading engine (/status, /positions, /emergency_stop, /resume, /close_all, /harvest, /help).
+
+    Auto-Reconnect: Otomatis menyambung kembali jika terjadi kendala jaringan (network drop atau timeout).
+
+🚀 Cara Menjalankan Bot Telegram
+1. Pastikan File .env Sudah Berisi Token Bot Anda
+
+Buka atau buat file .env di root folder proyek, lalu isi:
+code Env
+
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz_Contoh
+TELEGRAM_CHAT_ID=123456789
+
+    💡 Tips mendapatkan Chat ID: Kirim pesan apa saja ke bot Anda, atau ke bot pembantu @userinfobot di Telegram untuk mengetahui angka ID Telegram Anda.
+
+2. Install Dependensi (Jika Belum)
+code Bash
+
+pip install -r requirements.txt
+
+3. Jalankan Skrip Bot
+
+Jalankan file run_bot.py:
+code Bash
+
+python run_bot.py
+
+Output terminal akan menampilkan konfirmasi:
+code Text
+
+[INFO] money_for_honey.bot_runner: ⚡ Initializing MONEY For HONEY Telegram Bot Runner...
+[INFO] money_for_honey.bot_runner: ✅ Authenticated as: Money For Honey (@MoneyForHoneyyBot) | ID: 123456789
+[INFO] money_for_honey.bot_runner: 🧹 Clearing existing webhooks for long-polling mode: Webhook was deleted
+[INFO] money_for_honey.bot_runner: 🚀 Polling loop started! Send commands like /start, /status, /help in Telegram...
+
+4. Menjalankan di Latar Belakang (VPS / Background Process)
+
+Agar bot tetap aktif saat Anda menutup terminal:
+code Bash
+
+nohup python run_bot.py > bot.log 2>&1 &
+
+Atau menggunakan PM2:
+code Bash
+
+pm2 start run_bot.py --name "money-honey-bot" --interpreter python3
+
+🧪 Daftar Perintah Siap Pakai di Telegram:
+
+    /start atau /help — Menampilkan menu panduan dan daftar perintah ChatOps.
+
+    /status — Memeriksa status sirkuit pengaman (circuit breaker), PnL harian, dan saldo brankas.
+
+    /positions — Menampilkan posisi order yang sedang aktif.
+
+    /emergency_stop — Menghentikan perdagangan dan membatalkan semua antrean order.
+
+    /resume — Mengaktifkan kembali mesin perdagangan setelah berhenti darurat.
+
+    /harvest — Menjalankan penarikan/alokasi keuntungan ke Binance Simple Earn.
+
+    /close_all — Menutup seluruh posisi aktif dan membukukan profit.
+
+Sistem bot Telegram kini telah ditingkatkan menjadi Interactive Inline Keyboard Console profesional dengan dukungan tombol klik interaktif (two-way callback queries) dan pembaruan layar langsung di tempat (in-place message update).
+🌟 Fitur Baru pada Inline Keyboard:
+
+    📱 Main Operator Control Center Grid (/start / /menu):
+
+        [ 📊 Live Telemetry ] [ 📈 Active Trades ]
+
+        [ 🏦 Vault & Harvest ] [ ⚡ Radar Signals ]
+
+        [ 🚨 Emergency Stop ] [ ✅ Resume Engine ]
+
+        [ 🛑 Close All Trades ] [ 📖 Manual / Help ]
+
+    🔄 In-Place Live Refresh:
+
+        Saat Anda mengklik tombol [ 🔄 Refresh Telemetry ], bot akan memperbarui teks pesan status lama secara langsung (edit message) tanpa spam membuat chat bubble baru!
+
+    🛡️ 2-Step Confirmation Safety Gate:
+
+        Perintah kritis seperti Emergency Stop dan Close All Trades dilengkapi dialog konfirmasi:
+
+            [ 🚨 CONFIRM EMERGENCY STOP ] atau [ ❌ Cancel & Return ]
+
+            Mencegah salah klik order/likuidasi yang tidak disengaja.
+
+    ⚡ Fast Loading & Toast Feedback:
+
+        Didukung answerCallbackQuery sehingga tidak ada loading spinner macet saat tombol ditekan.
+
+🚀 Cara Menjalankan Ulang Bot di VS Code:
+
+    Di terminal VS Code yang sedang berjalan, tekan Ctrl + C untuk menghentikan bot sebelumnya.
+
+    Jalankan kembali dengan perintah:
+    code Powershell
+
+    python run_bot.py
+
+    Buka Telegram bot Anda (@MoneyForHoneyyBot) lalu kirim:
+    code Text
+
+    /start
+
+    Dashboard konsol tombol interaktif instan akan langsung muncul dan siap Anda klik!

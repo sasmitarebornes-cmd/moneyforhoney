@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  fastapi-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: money_for_honey_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - TESTNET_MODE=true
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://honey_admin:honey_secret_pass@postgres:5432/money_for_honey
+      - RISK_PER_TRADE_PCT=0.015
+      - DAILY_DRAWDOWN_CAP_PCT=0.05
+      - MIN_ARBITRAGE_SPREAD_PCT=0.006
+      - MAINTENANCE_FEE_PCT=0.05
+      - VAULT_RESERVE_PCT=0.30
+      - REINVEST_PCT=0.70
+      - VAULT_LOCKED_THRESHOLD=100.0
+    volumes:
+      - sqlite_data:/app/data
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - trading_network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: money_for_honey_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - trading_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: money_for_honey_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: honey_admin
+      POSTGRES_PASSWORD: honey_secret_pass
+      POSTGRES_DB: money_for_honey
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - trading_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: money_for_honey_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - fastapi-backend
+    networks:
+      - trading_network
+
+volumes:
+  sqlite_data:
+  redis_data:
+  pg_data:
+
+networks:
+  trading_network:
+    driver: bridge
