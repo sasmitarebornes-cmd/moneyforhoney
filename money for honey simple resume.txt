@@ -415,3 +415,31 @@ Langkah 4: Nyalakan Bot (Start Server)
     Selesai! 🎉 Bot Telegram dan auto-broadcast channel Anda sekarang sudah resmi berjalan 24/7 di cloud fps.ms tanpa membebani laptop Anda!
 
 
+🔌 Bagaimana Agar Web UI Dashboard Berubah Menjadi Data Real-Time ($10 - $20 Anda)?
+
+Ada 2 cara untuk menghubungkannya:
+Opsi 1: Hubungkan Frontend Langsung ke Binance Public / Read-Only WebSocket (Paling Mudah)
+
+    Frontend React bisa langsung meminta saldo akun (Read-Only) dari Binance API atau membaca data ticker live langsung via WebSocket Binance resmi.
+
+Opsi 2: Sambungkan Endpoint Backend Bot (di fps.ms) ke Frontend
+
+    Backend Python di fps.ms menyediakan API endpoint (misal: /api/telemetry).
+
+    Frontend di Cloudflare Pages akan memanggil (fetch) data tersebut setiap beberapa detik.
+
+    Begitu bot Anda mendeteksi saldo 
+
+    20 di Binance, kartu Total Portfolio Equity di web otomatis berubah dari
+    10.00 USDT / $20.00 USDT** secara real-time!
+
+💡 Rekomendasi Langkah Anda Saat Ini:
+
+Karena Anda memulai dengan modal tester $10 – $20:
+
+    Untuk Memantau Trading Real-Time: Jalankan bot di fps.ms. Seluruh data posisi riil, floating PnL, order buy/sell, dan auto-sweep brankas sudah 100% REAL-TIME melalui bot Telegram dan Channel Telegram Anda.
+
+    Untuk Web UI Dashboard: Apakah Anda ingin saya buatkan fitur "Connect Binance Read-Only API" langsung di Dashboard Web UI agar angka portofolio
+    20 Anda langsung tampil di browser?
+
+

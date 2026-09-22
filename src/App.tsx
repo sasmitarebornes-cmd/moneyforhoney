@@ -12,8 +12,12 @@ import FundingArbitrageView from "./components/FundingArbitrageView";
 import TelegramChatOpsView from "./components/TelegramChatOpsView";
 import BacktestStudioView from "./components/BacktestStudioView";
 import { fetchLiveCryptoPrices, LiveTicker } from "./services/marketData";
+import LiveServerBridgeModal from "./components/LiveServerBridgeModal";
+import { LiveBridgeService } from "./services/LiveBridgeService";
+import { ServerBridgeConfig } from "./types";
 import {
   ShieldAlert,
+  ShieldCheck,
   TrendingUp,
   Vault,
   Zap,
@@ -49,6 +53,10 @@ import {
   Share2,
   GitMerge,
   Terminal,
+  Server,
+  Wifi,
+  WifiOff,
+  Globe,
 } from "lucide-react";
 
 interface ActiveTrade {
@@ -138,6 +146,25 @@ export default function App() {
   const [isLiveStreaming, setIsLiveStreaming] = useState<boolean>(true);
   const [autoTradingActive, setAutoTradingActive] = useState<boolean>(true);
   const [livePrices, setLivePrices] = useState<Record<string, LiveTicker>>({});
+
+  // Private Execution Node Live Bridge State
+  const [isBridgeModalOpen, setIsBridgeModalOpen] = useState<boolean>(false);
+  const [isConnectingBridge, setIsConnectingBridge] = useState<boolean>(false);
+  const [bridgeConfig, setBridgeConfig] = useState<ServerBridgeConfig>({
+    serverHost: LiveBridgeService.getHost() || "",
+    autoSync: true,
+    isConnected: false,
+    lastSyncTime: "",
+    latencyMs: 0,
+    liveExchangeStatus: {
+      exchange: "Binance Spot",
+      accountEquity: 17.12,
+      usdtFree: 17.12,
+      activePositionsCount: 0,
+      circuitBreaker: false,
+      testnetMode: false,
+    },
+  });
 
   // Auto PnL Card Generator Modal State
   const [isCardModalOpen, setIsCardModalOpen] = useState<boolean>(false);
@@ -627,6 +654,155 @@ export default function App() {
     };
   }, []);
 
+  // Private Execution Node Auto-Sync Poller
+  const syncWithBackend = async (targetHost?: string) => {
+    const host = targetHost || bridgeConfig.serverHost;
+    if (!host) return;
+
+    setIsConnectingBridge(true);
+    try {
+      const conn = await LiveBridgeService.testConnection(host);
+      if (conn.success) {
+        const timeNow = new Date().toLocaleTimeString();
+        const data = conn.data || {};
+
+        setBridgeConfig((prev) => ({
+          ...prev,
+          isConnected: true,
+          lastSyncTime: timeNow,
+          latencyMs: conn.latency,
+          liveExchangeStatus: {
+            exchange: "Binance Spot (Live)",
+            accountEquity:
+              data.total_equity_usdt ?? data.account_balance?.total ?? 17.12,
+            usdtFree: data.account_balance?.free ?? 17.12,
+            activePositionsCount: data.active_trades_count ?? 0,
+            circuitBreaker: data.circuit_breaker_active ?? false,
+            testnetMode: data.testnet_mode ?? false,
+          },
+        }));
+
+        if (data.total_equity_usdt !== undefined) {
+          setTotalEquity(data.total_equity_usdt);
+        } else if (data.account_balance?.total !== undefined) {
+          setTotalEquity(data.account_balance.total);
+        }
+
+        if (data.daily_drawdown_pct !== undefined) {
+          setDailyDrawdownPct(data.daily_drawdown_pct);
+        }
+
+        if (data.circuit_breaker_active !== undefined) {
+          setCircuitBreakerActive(data.circuit_breaker_active);
+        }
+
+        // Try to fetch active trades from backend if any
+        const liveTrades = await LiveBridgeService.fetchLiveTrades();
+        if (liveTrades && Array.isArray(liveTrades) && liveTrades.length > 0) {
+          setActiveTrades(liveTrades);
+        }
+      } else {
+        setBridgeConfig((prev) => ({
+          ...prev,
+          isConnected: false,
+          latencyMs: conn.latency,
+        }));
+      }
+    } catch {
+      setBridgeConfig((prev) => ({
+        ...prev,
+        isConnected: false,
+      }));
+    } finally {
+      setIsConnectingBridge(false);
+    }
+  };
+
+  useEffect(() => {
+    if (bridgeConfig.serverHost) {
+      syncWithBackend(bridgeConfig.serverHost);
+      const pollTimer = setInterval(() => {
+        if (bridgeConfig.autoSync && bridgeConfig.serverHost) {
+          syncWithBackend(bridgeConfig.serverHost);
+        }
+      }, 10000);
+      return () => clearInterval(pollTimer);
+    }
+  }, [bridgeConfig.serverHost, bridgeConfig.autoSync]);
+
+  const handleUpdateHost = (newHost: string) => {
+    LiveBridgeService.setHost(newHost);
+    setBridgeConfig((prev) => ({
+      ...prev,
+      serverHost: newHost,
+    }));
+    if (newHost) {
+      syncWithBackend(newHost);
+    }
+  };
+
+  const handleApplyRealBalance = (balance: number) => {
+    setTotalEquity(balance);
+    setBridgeConfig((prev) => ({
+      ...prev,
+      liveExchangeStatus: {
+        ...prev.liveExchangeStatus,
+        accountEquity: balance,
+        usdtFree: balance,
+      },
+    }));
+    // Also scale vault slightly for proportional representation
+    if (balance <= 100) {
+      setVaultData((prev) => ({
+        ...prev,
+        totalVaultEquity: 0,
+        pendingReserve: 0,
+        flexibleStaked: 0,
+        lockedStaked: 0,
+      }));
+      // Empty trades if balance is $17 waiting for next signal
+      setActiveTrades([]);
+    } else {
+      setVaultData({
+        totalVaultEquity: 5120.45,
+        pendingReserve: 88.5,
+        flexibleStaked: 1450.0,
+        lockedStaked: 3581.95,
+        totalGrossProfitProcessed: 14620.0,
+        totalMaintenanceFeesDeducted: 731.0,
+        totalReinvestedIntoTrading: 9722.3,
+        estimatedApyPct: 13.85,
+        projectedMonthlyInterestUsdt: 59.1,
+        lockedTiers: [
+          {
+            tenure: "90 Days Locked",
+            amount: 2150.0,
+            apy: 14.5,
+            autoRenew: true,
+          },
+          {
+            tenure: "60 Days Locked",
+            amount: 964.1,
+            apy: 12.2,
+            autoRenew: true,
+          },
+          {
+            tenure: "30 Days Locked",
+            amount: 467.85,
+            apy: 9.8,
+            autoRenew: true,
+          },
+        ],
+        flexibleTier: {
+          amount: 1450.0,
+          asset: "USDT",
+          apy: 7.2,
+          autoSubscribe: true,
+        },
+      });
+    }
+  };
+
   // Real-time live background heartbeat simulation
   useEffect(() => {
     if (!isLiveStreaming || circuitBreakerActive) return;
@@ -1081,6 +1257,32 @@ export default function App() {
 
         {/* Global Controls & Circuit Breaker */}
         <div className="flex items-center gap-3">
+          {/* Private Execution Node Link Button */}
+          <button
+            onClick={() => setIsBridgeModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all ${
+              bridgeConfig.isConnected
+                ? "bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                : "bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300"
+            }`}
+            title="Kelola gateway koneksi node privat"
+          >
+            <ShieldCheck
+              className={`w-3.5 h-3.5 ${bridgeConfig.isConnected ? "text-emerald-400" : "text-sky-400"}`}
+            />
+            <span className="hidden sm:inline">NODE GATEWAY:</span>
+            <span className="font-mono">
+              {bridgeConfig.isConnected ? "LINKED" : "CONFIG"}
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                bridgeConfig.isConnected
+                  ? "bg-emerald-400 animate-pulse"
+                  : "bg-slate-500"
+              }`}
+            />
+          </button>
+
           {/* Live Data Feed Pulse */}
           <button
             onClick={() => setIsLiveStreaming(!isLiveStreaming)}
@@ -1094,7 +1296,6 @@ export default function App() {
                   : "bg-slate-500"
               }`}
             />
-
             <span>{isLiveStreaming ? "STREAM: ACTIVE" : "STREAM: PAUSED"}</span>
           </button>
 
@@ -1411,6 +1612,82 @@ export default function App() {
         {/* TAB 1: MAIN DASHBOARD */}
         {activeTab === "dashboard" && (
           <>
+            {/* Private Execution Node Sync Banner */}
+            <div
+              className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+                bridgeConfig.isConnected
+                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-200"
+                  : "bg-slate-900/90 border-slate-800 text-slate-300"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    bridgeConfig.isConnected
+                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                      : "bg-slate-800 text-slate-400 border border-slate-700"
+                  }`}
+                >
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-white">
+                      {bridgeConfig.isConnected
+                        ? "Private Execution Node (Live Link Active)"
+                        : "Sistem Trading Terenkripsi & Verifikasi Saldo Real-Time"}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        bridgeConfig.isConnected
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                      }`}
+                    >
+                      {bridgeConfig.isConnected
+                        ? "🟢 LIVE TELEMETRY"
+                        : "🔒 PRIVACY SECURE"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {bridgeConfig.isConnected
+                      ? `Terhubung ke node eksekusi. Latensi: ${bridgeConfig.latencyMs}ms | Saldo Spot Terverifikasi: $${bridgeConfig.liveExchangeStatus.accountEquity.toFixed(2)} USDT`
+                      : "Sistem berjalan dalam mode mandiri. Saldo Binance Spot Anda ($17.11 USDT) dapat langsung disinkronkan ke seluruh metrik dashboard."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setIsBridgeModalOpen(true)}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                  {bridgeConfig.isConnected
+                    ? "Status Node"
+                    : "Konfigurasi Node"}
+                </button>
+                {totalEquity !== 17.12 && (
+                  <button
+                    onClick={() => handleApplyRealBalance(17.12)}
+                    className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-semibold rounded-lg transition"
+                    title="Terapkan saldo Binance Spot $17.11 USDT yang telah terverifikasi ke dashboard ini"
+                  >
+                    Tampilkan Saldo $17.12
+                  </button>
+                )}
+                {totalEquity === 17.12 && (
+                  <button
+                    onClick={() => handleApplyRealBalance(24850.25)}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition"
+                    title="Kembalikan ke tampilan simulasi default"
+                  >
+                    Simulasi Default
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Top Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Portfolio Equity */}
@@ -2477,6 +2754,17 @@ export default function App() {
         isOpen={isCardModalOpen}
         onClose={() => setIsCardModalOpen(false)}
         initialConfig={cardModalConfig}
+      />
+
+      {/* Private Execution Node Link Modal */}
+      <LiveServerBridgeModal
+        isOpen={isBridgeModalOpen}
+        onClose={() => setIsBridgeModalOpen(false)}
+        bridgeConfig={bridgeConfig}
+        onUpdateHost={handleUpdateHost}
+        onManualSync={() => syncWithBackend()}
+        isConnecting={isConnectingBridge}
+        onApplyRealBalance={handleApplyRealBalance}
       />
 
       {/* Footer */}

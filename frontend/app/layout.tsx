@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata = {
   title: "MONEY For HONEY — Autonomous Trading System",
-  description: "autonomous Trading system and build self wealth engine for the future",
+  description:
+    "autonomous Trading system and build self wealth engine for the future",
 };
 
 export default function RootLayout({

@@ -77,8 +77,18 @@ export interface VaultData {
   totalReinvestedIntoTrading: number;
   estimatedApyPct: number;
   projectedMonthlyInterestUsdt: number;
-  lockedTiers: Array<{ tenure: string; amount: number; apy: number; autoRenew: boolean }>;
-  flexibleTier: { amount: number; asset: string; apy: number; autoSubscribe: boolean };
+  lockedTiers: Array<{
+    tenure: string;
+    amount: number;
+    apy: number;
+    autoRenew: boolean;
+  }>;
+  flexibleTier: {
+    amount: number;
+    asset: string;
+    apy: number;
+    autoSubscribe: boolean;
+  };
 }
 
 export interface NotificationItem {
@@ -89,7 +99,7 @@ export interface NotificationItem {
   type: "TRADE" | "VAULT" | "CIRCUIT" | "ARBITRAGE" | "PNL_CARD";
 }
 
-export type PnLCardTheme = 
+export type PnLCardTheme =
   | "golden_wave_surfer" // exact like uploaded image
   | "money_for_honey_hive"
   | "midnight_neon_bull"
@@ -110,4 +120,20 @@ export interface PnLCardConfig {
   theme: PnLCardTheme;
   aspectRatio: "16:9" | "9:16";
   showQrCode: boolean;
+}
+
+export interface ServerBridgeConfig {
+  serverHost: string; // e.g. "http://47.245.xxx.xxx:8000" or empty
+  autoSync: boolean;
+  isConnected: boolean;
+  lastSyncTime: string;
+  latencyMs: number;
+  liveExchangeStatus: {
+    exchange: string;
+    accountEquity: number;
+    usdtFree: number;
+    activePositionsCount: number;
+    circuitBreaker: boolean;
+    testnetMode: boolean;
+  };
 }

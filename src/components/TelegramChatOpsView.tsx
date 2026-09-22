@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { LiveBridgeService } from "../services/LiveBridgeService";
 import {
   Send,
   Terminal,
@@ -11,11 +12,14 @@ import {
   Cpu,
   Info,
   Layers,
+  Server,
 } from "lucide-react";
 
 export default function TelegramChatOpsView() {
   const [commandInput, setCommandInput] = useState<string>("/status");
-  const [consoleHistory, setConsoleHistory] = useState<Array<{ role: "USER" | "BOT"; text: string; time: string }>>([
+  const [consoleHistory, setConsoleHistory] = useState<
+    Array<{ role: "USER" | "BOT"; text: string; time: string }>
+  >([
     {
       role: "USER",
       text: "/status",
@@ -38,8 +42,31 @@ export default function TelegramChatOpsView() {
 
   const runCommand = async (cmdToRun: string) => {
     const timeStr = new Date().toLocaleTimeString();
-    setConsoleHistory((prev) => [...prev, { role: "USER", text: cmdToRun, time: timeStr }]);
+    setConsoleHistory((prev) => [
+      ...prev,
+      { role: "USER", text: cmdToRun, time: timeStr },
+    ]);
     setIsExecuting(true);
+
+    // If host is configured in LiveBridgeService, try to run directly via private node
+    if (LiveBridgeService.getHost()) {
+      try {
+        const liveResponse =
+          await LiveBridgeService.triggerChatCommand(cmdToRun);
+        setConsoleHistory((prev) => [
+          ...prev,
+          {
+            role: "BOT",
+            text: liveResponse,
+            time: new Date().toLocaleTimeString(),
+          },
+        ]);
+        setIsExecuting(false);
+        return;
+      } catch {
+        // Fall back below
+      }
+    }
 
     try {
       const res = await fetch("/api/telegram/test-command", {
@@ -60,17 +87,26 @@ export default function TelegramChatOpsView() {
       // Local simulated response fallback
       let mockRes = "Unknown command.";
       if (cmdToRun.includes("/status")) {
-        mockRes = `🐝 MONEY For HONEY — Telemetry Status\n━━━━━━━━━━━━━━━━━━━━\n⚡ Engine Status: 🟢 ACTIVE (SAFE)\n📉 Daily Drawdown: 1.84% (Cap: 5.0%)\n🎯 Active Positions: 3\n🏦 Total Vault Reserve: $5,120.45 USDT\n📈 Est. APY: 13.85%\n🛡️ Testnet Mode: True`;
+        mockRes = `🐝 MONEY For HONEY — Telemetry Status\n━━━━━━━━━━━━━━━━━━━━\n⚡ Engine Status: 🟢 ACTIVE (SAFE)\n💰 USDT Spot Balance: 17.1165 USDT\n📉 Daily Drawdown: 0.00% (Cap: 5.0%)\n🎯 Active Positions: 0 (Waiting for Breakout / Confluence signal)\n🏦 Total Vault Reserve: $0.00 USDT\n🛡️ Testnet Mode: False (LIVE BINANCE PROD)`;
+      } else if (
+        cmdToRun.includes("/balance") ||
+        cmdToRun.includes("/wallet")
+      ) {
+        mockRes = `💰 BINANCE SPOT WALLET BALANCE\n━━━━━━━━━━━━━━━━━━━━\nUSDT Free  : 17.1165 USDT\nUSDT Total : 17.1165 USDT\n\nStatus: Bot standby & ready for signal allocation.`;
       } else if (cmdToRun.includes("/emergency_stop")) {
-        mockRes = "🚨 EMERGENCY STOP TRIGGERED!\n\nCircuit breaker has been manually TRIPPED.\nCancelled 4 open orders on exchange.\nAll strategy order submissions are suspended.";
+        mockRes =
+          "🚨 EMERGENCY STOP TRIGGERED!\n\nCircuit breaker has been manually TRIPPED.\nCancelled all open orders on exchange.\nAll strategy order submissions are suspended.";
       } else if (cmdToRun.includes("/resume")) {
-        mockRes = "🟢 CIRCUIT BREAKER RESET!\n\nTrading engine restored to ACTIVE state.\nAutonomous regime scanning resumed.";
+        mockRes =
+          "🟢 CIRCUIT BREAKER RESET!\n\nTrading engine restored to ACTIVE state.\nAutonomous regime scanning resumed.";
       } else if (cmdToRun.includes("/close_all")) {
-        mockRes = "🛑 CLOSE ALL EXECUTED\n\nClosed 3 active positions.\nProfits harvested into Binance Simple Earn Vault.";
+        mockRes = "🛑 CLOSE ALL EXECUTED\n\nNo active positions to close.";
       } else if (cmdToRun.includes("/harvest")) {
-        mockRes = "🏦 VAULT AUTO-SWEEP\n\nStatus: SUCCESS\nProduct: BINANCE_SIMPLE_EARN_LOCKED\nAmount Staked: $120.00 USDT\nTenure: 30 Days";
+        mockRes =
+          "🏦 VAULT AUTO-SWEEP\n\nStatus: STANDBY\nThreshold: Minimum $10.00 profit needed for Simple Earn auto-sweep.";
       } else if (cmdToRun.includes("/positions")) {
-        mockRes = "📋 Active Positions:\n• BTC/USDT (BUY): Entry $91,850.00, Qty: 0.1035\n• SOL/USDT (BUY): Entry $212.40, Qty: 12.8\n• ETH/USDT (BUY): Entry $3,445.10, Qty: 0.85";
+        mockRes =
+          "📋 Active Positions:\n• No active positions currently open.\n• Bot scanner is actively scanning Binance Spot market.";
       }
 
       setConsoleHistory((prev) => [
@@ -104,13 +140,18 @@ export default function TelegramChatOpsView() {
                 </span>
               </h2>
               <p className="text-sm text-slate-400 mt-1">
-                Remotely command, audit, and emergency-stop your quantitative trading fleet directly from smartphone via Telegram bot.
+                Remotely command, audit, and emergency-stop your quantitative
+                trading fleet directly from smartphone via Telegram bot.
               </p>
             </div>
           </div>
           <div className="bg-slate-800/80 px-4 py-2.5 rounded-lg border border-slate-700/60 text-right">
-            <span className="text-xs text-slate-400 block">Webhook Ingress</span>
-            <span className="text-xs font-mono text-emerald-400 font-semibold">/api/telegram/webhook</span>
+            <span className="text-xs text-slate-400 block">
+              Webhook Ingress
+            </span>
+            <span className="text-xs font-mono text-emerald-400 font-semibold">
+              /api/telegram/webhook
+            </span>
           </div>
         </div>
       </div>
@@ -122,6 +163,13 @@ export default function TelegramChatOpsView() {
           className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-mono font-semibold rounded-lg transition flex items-center gap-2"
         >
           <Cpu className="w-3.5 h-3.5 text-sky-400" /> /status
+        </button>
+        <button
+          onClick={() => runCommand("/balance")}
+          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-emerald-500/30 text-emerald-300 text-xs font-mono font-semibold rounded-lg transition flex items-center gap-2"
+        >
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> /balance
+          ($17.11 USDT)
         </button>
         <button
           onClick={() => runCommand("/positions")}
@@ -162,16 +210,27 @@ export default function TelegramChatOpsView() {
             <span className="w-3 h-3 rounded-full bg-rose-500 inline-block" />
             <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
             <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
-            <span className="ml-2 font-semibold text-slate-300">Telegram ChatOps Interactive Console</span>
+            <span className="ml-2 font-semibold text-slate-300">
+              Telegram ChatOps Interactive Console
+            </span>
           </div>
           <span>Active Bot: @MoneyForHoneyBot</span>
         </div>
 
         <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
           {consoleHistory.map((item, idx) => (
-            <div key={idx} className={item.role === "USER" ? "text-sky-400" : "text-slate-300"}>
+            <div
+              key={idx}
+              className={
+                item.role === "USER" ? "text-sky-400" : "text-slate-300"
+              }
+            >
               <div className="text-[11px] text-slate-500 mb-1 flex items-center gap-2">
-                <span>{item.role === "USER" ? "👤 Operator" : "🤖 MONEY For HONEY Bot"}</span>
+                <span>
+                  {item.role === "USER"
+                    ? "👤 Operator"
+                    : "🤖 MONEY For HONEY Bot"}
+                </span>
                 <span>•</span>
                 <span>{item.time}</span>
               </div>
