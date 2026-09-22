@@ -127,17 +127,11 @@ export const LiveServerBridgeModal: React.FC<LiveServerBridgeModalProps> = ({
             </p>
             <div className="flex items-center gap-3 pt-1">
               <button
-                onClick={() => onApplyRealBalance(17.12)}
+                onClick={() => onApplyRealBalance(17.1165)}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 shadow-sm"
               >
                 <Sliders className="w-3.5 h-3.5" />
-                Terapkan Saldo $17.12 USDT
-              </button>
-              <button
-                onClick={() => onApplyRealBalance(24850.25)}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition"
-              >
-                Reset ke Tampilan Default
+                Sinkronkan Saldo $17.12 USDT
               </button>
             </div>
           </div>

@@ -191,258 +191,12 @@ export default function App() {
   });
 
   // Historical Closed Trades
-  const [historicalTrades, setHistoricalTrades] = useState<HistoricalTrade[]>([
-    {
-      id: "TRD-88201",
-      symbol: "JOD/CNY OTC",
-      strategy: "HIGH_FREQUENCY_OTC_ALGO",
-      side: "BUY",
-      exchange: "OTC_LIQUIDITY_POOL",
-      entryPrice: 0.985,
-      exitPrice: 6.028,
-      stakeUsdt: 10.0,
-      quantity: 10.15,
-      realizedPnlUsdt: 51.2,
-      roiPct: 512.0,
-      duration: "2m 51s",
-      status: "WIN",
-      riskProfile: "Aggressive",
-      winScore: "5/5",
-      feeUsdt: 2.56,
-      reinvestUsdt: 34.05,
-      vaultUsdt: 14.59,
-      closedAt: "2026-03-24 14:18:02",
-    },
-    {
-      id: "TRD-88202",
-      symbol: "BTC/USDT",
-      strategy: "DYNAMIC_BREAKOUT_MOMENTUM",
-      side: "BUY",
-      exchange: "BINANCE",
-      entryPrice: 88400.0,
-      exitPrice: 93150.0,
-      stakeUsdt: 250.0,
-      quantity: 0.0725,
-      realizedPnlUsdt: 342.8,
-      roiPct: 137.1,
-      duration: "3h 12m",
-      status: "WIN",
-      riskProfile: "Conservative",
-      winScore: "5/5",
-      feeUsdt: 17.14,
-      reinvestUsdt: 227.96,
-      vaultUsdt: 97.7,
-      closedAt: "2026-03-24 11:05:40",
-    },
-    {
-      id: "TRD-88203",
-      symbol: "SOL/USDT",
-      strategy: "STATISTICAL_MEAN_REVERSION",
-      side: "BUY",
-      exchange: "BYBIT",
-      entryPrice: 195.2,
-      exitPrice: 218.4,
-      stakeUsdt: 120.0,
-      quantity: 6.14,
-      realizedPnlUsdt: 142.6,
-      roiPct: 118.8,
-      duration: "1h 45m",
-      status: "WIN",
-      riskProfile: "Moderate",
-      winScore: "4/5",
-      feeUsdt: 7.13,
-      reinvestUsdt: 94.83,
-      vaultUsdt: 40.64,
-      closedAt: "2026-03-23 21:30:15",
-    },
-    {
-      id: "TRD-88204",
-      symbol: "ETH/USDT",
-      strategy: "SPATIAL_ARBITRAGE_TRILATERAL",
-      side: "ARBITRAGE",
-      exchange: "BINANCE_TO_BYBIT",
-      entryPrice: 3350.0,
-      exitPrice: 3385.5,
-      stakeUsdt: 1500.0,
-      quantity: 1.84,
-      realizedPnlUsdt: 65.25,
-      roiPct: 4.35,
-      duration: "4m 18s",
-      status: "WIN",
-      riskProfile: "Conservative",
-      winScore: "5/5",
-      feeUsdt: 3.26,
-      reinvestUsdt: 43.39,
-      vaultUsdt: 18.6,
-      closedAt: "2026-03-23 18:14:02",
-    },
-    {
-      id: "TRD-88205",
-      symbol: "BNB/USDT",
-      strategy: "DYNAMIC_BREAKOUT_MOMENTUM",
-      side: "BUY",
-      exchange: "OKX",
-      entryPrice: 635.0,
-      exitPrice: 622.0,
-      stakeUsdt: 80.0,
-      quantity: 1.26,
-      realizedPnlUsdt: -16.4,
-      roiPct: -20.5,
-      duration: "42m",
-      status: "LOSS",
-      riskProfile: "Moderate",
-      winScore: "2/5",
-      feeUsdt: 0.0,
-      reinvestUsdt: 0.0,
-      vaultUsdt: 0.0,
-      closedAt: "2026-03-23 15:40:22",
-    },
-    {
-      id: "TRD-88206",
-      symbol: "DOGE/USDT",
-      strategy: "MICRO_ORDERBOOK_SCALP",
-      side: "BUY",
-      exchange: "BINANCE",
-      entryPrice: 0.385,
-      exitPrice: 0.442,
-      stakeUsdt: 50.0,
-      quantity: 1298.0,
-      realizedPnlUsdt: 74.0,
-      roiPct: 148.0,
-      duration: "8m 10s",
-      status: "WIN",
-      riskProfile: "Aggressive",
-      winScore: "5/5",
-      feeUsdt: 3.7,
-      reinvestUsdt: 49.21,
-      vaultUsdt: 21.09,
-      closedAt: "2026-03-23 12:02:18",
-    },
-    {
-      id: "TRD-88207",
-      symbol: "AVAX/USDT",
-      strategy: "STATISTICAL_MEAN_REVERSION",
-      side: "BUY",
-      exchange: "BYBIT",
-      entryPrice: 38.4,
-      exitPrice: 43.2,
-      stakeUsdt: 100.0,
-      quantity: 26.0,
-      realizedPnlUsdt: 125.0,
-      roiPct: 125.0,
-      duration: "2h 10m",
-      status: "WIN",
-      riskProfile: "Moderate",
-      winScore: "5/5",
-      feeUsdt: 6.25,
-      reinvestUsdt: 83.13,
-      vaultUsdt: 35.62,
-      closedAt: "2026-03-22 19:45:00",
-    },
-    {
-      id: "TRD-88208",
-      symbol: "LINK/USDT",
-      strategy: "DYNAMIC_BREAKOUT_MOMENTUM",
-      side: "BUY",
-      exchange: "BINANCE",
-      entryPrice: 22.5,
-      exitPrice: 21.8,
-      stakeUsdt: 75.0,
-      quantity: 33.3,
-      realizedPnlUsdt: -14.0,
-      roiPct: -18.7,
-      duration: "1h 05m",
-      status: "LOSS",
-      riskProfile: "Moderate",
-      winScore: "1/5",
-      feeUsdt: 0.0,
-      reinvestUsdt: 0.0,
-      vaultUsdt: 0.0,
-      closedAt: "2026-03-22 14:12:30",
-    },
-  ]);
+  const [historicalTrades, setHistoricalTrades] = useState<HistoricalTrade[]>(
+    [],
+  );
 
   // Historical Profit & Loss Waterfall Ledger
-  const [pnlLedger, setPnlLedger] = useState<PnLLedgerEntry[]>([
-    {
-      id: "LDG-9901",
-      tradeId: "TRD-88201",
-      symbol: "JOD/CNY OTC",
-      grossProfitUsdt: 51.2,
-      feeDeductedUsdt: 2.56,
-      netProfitUsdt: 48.64,
-      reinvestAllocUsdt: 34.05,
-      vaultReserveAllocUsdt: 14.59,
-      balanceAfterUsdt: 24850.25,
-      vaultAfterUsdt: 5120.45,
-      timestamp: "2026-03-24 14:18:02",
-    },
-    {
-      id: "LDG-9902",
-      tradeId: "TRD-88202",
-      symbol: "BTC/USDT",
-      grossProfitUsdt: 342.8,
-      feeDeductedUsdt: 17.14,
-      netProfitUsdt: 325.66,
-      reinvestAllocUsdt: 227.96,
-      vaultReserveAllocUsdt: 97.7,
-      balanceAfterUsdt: 24816.2,
-      vaultAfterUsdt: 5105.86,
-      timestamp: "2026-03-24 11:05:40",
-    },
-    {
-      id: "LDG-9903",
-      tradeId: "TRD-88203",
-      symbol: "SOL/USDT",
-      grossProfitUsdt: 142.6,
-      feeDeductedUsdt: 7.13,
-      netProfitUsdt: 135.47,
-      reinvestAllocUsdt: 94.83,
-      vaultReserveAllocUsdt: 40.64,
-      balanceAfterUsdt: 24588.24,
-      vaultAfterUsdt: 5008.16,
-      timestamp: "2026-03-23 21:30:15",
-    },
-    {
-      id: "LDG-9904",
-      tradeId: "TRD-88204",
-      symbol: "ETH/USDT",
-      grossProfitUsdt: 65.25,
-      feeDeductedUsdt: 3.26,
-      netProfitUsdt: 61.99,
-      reinvestAllocUsdt: 43.39,
-      vaultReserveAllocUsdt: 18.6,
-      balanceAfterUsdt: 24493.41,
-      vaultAfterUsdt: 4967.52,
-      timestamp: "2026-03-23 18:14:02",
-    },
-    {
-      id: "LDG-9905",
-      tradeId: "TRD-88206",
-      symbol: "DOGE/USDT",
-      grossProfitUsdt: 74.0,
-      feeDeductedUsdt: 3.7,
-      netProfitUsdt: 70.3,
-      reinvestAllocUsdt: 49.21,
-      vaultReserveAllocUsdt: 21.09,
-      balanceAfterUsdt: 24450.02,
-      vaultAfterUsdt: 4948.92,
-      timestamp: "2026-03-23 12:02:18",
-    },
-    {
-      id: "LDG-9906",
-      tradeId: "TRD-88207",
-      symbol: "AVAX/USDT",
-      grossProfitUsdt: 125.0,
-      feeDeductedUsdt: 6.25,
-      netProfitUsdt: 118.75,
-      reinvestAllocUsdt: 83.13,
-      vaultReserveAllocUsdt: 35.62,
-      balanceAfterUsdt: 24400.81,
-      vaultAfterUsdt: 4927.83,
-      timestamp: "2026-03-22 19:45:00",
-    },
-  ]);
+  const [pnlLedger, setPnlLedger] = useState<PnLLedgerEntry[]>([]);
 
   // Circuit Breaker State
   const [circuitBreakerActive, setCircuitBreakerActive] =
@@ -450,7 +204,7 @@ export default function App() {
   const [circuitBreakerReason, setCircuitBreakerReason] = useState<
     string | null
   >(null);
-  const [dailyDrawdownPct, setDailyDrawdownPct] = useState<number>(1.84);
+  const [dailyDrawdownPct, setDailyDrawdownPct] = useState<number>(0.0);
   const maxDrawdownLimitPct = 5.0;
 
   // Portfolio Totals (Persisted with real Binance balance default)
@@ -461,11 +215,11 @@ export default function App() {
     }
     return 17.1165;
   });
-  const [todayPnl, setTodayPnl] = useState<number>(845.2);
-  const [todayPnlPct, setTodayPnlPct] = useState<number>(3.52);
-  const [winRate] = useState<number>(68.4);
-  const [adxValue, setAdxValue] = useState<number>(28.6);
-  const [atrPct] = useState<number>(1.95);
+  const [todayPnl, setTodayPnl] = useState<number>(0.0);
+  const [todayPnlPct, setTodayPnlPct] = useState<number>(0.0);
+  const [winRate] = useState<number>(100);
+  const [adxValue, setAdxValue] = useState<number>(24.5);
+  const [atrPct] = useState<number>(1.65);
   const [marketRegime, setMarketRegime] = useState<
     "BREAKOUT" | "MEAN_REVERSION" | "TRANSITION"
   >("BREAKOUT");
@@ -473,96 +227,17 @@ export default function App() {
   // Notifications Stream
   const [notifications, setNotifications] = useState<NotificationItem[]>([
     {
-      id: "nt-1",
+      id: "nt-live-init",
       channel: "TELEGRAM",
       type: "TRADE",
       message:
-        "Order Filled: BUY 0.1035 BTC/USDT @ $91,850.00 | Allocated Risk: $150.00 (1.5% Cap)",
-      timestamp: "6 mins ago",
-    },
-    {
-      id: "nt-2",
-      channel: "TELEGRAM",
-      type: "VAULT",
-      message:
-        "Profit Waterfall: Gross +$420.00 -> 5% Fee ($21.00), 70% Reinvest ($279.30), 30% Vault Reserve ($119.70)",
-      timestamp: "24 mins ago",
-    },
-    {
-      id: "nt-3",
-      channel: "TELEGRAM",
-      type: "VAULT",
-      message:
-        "Binance Simple Earn Auto-Sweep: Deposited $119.70 USDT to Locked 30-Days @ 9.8% APY",
-      timestamp: "24 mins ago",
-    },
-    {
-      id: "nt-4",
-      channel: "TELEGRAM",
-      type: "ARBITRAGE",
-      message:
-        "Spatial Arbitrage Executed: Buy BINANCE ($3,462.10) -> Sell BYBIT ($3,488.50) | Net Spread: +0.627%",
-      timestamp: "45 mins ago",
+        "🟢 Sistem Trading Otonom Siap: Terhubung ke Binance Spot API. Menunggu konfirmasi sinyal eksekusi.",
+      timestamp: "Baru saja",
     },
   ]);
 
-  // Active Positions
-  const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([
-    {
-      id: "TRD-88219",
-      symbol: "BTC/USDT",
-      strategy: "DYNAMIC_BREAKOUT_MOMENTUM",
-      side: "BUY",
-      entryPrice: 91850.0,
-      markPrice: 93420.5,
-      stopLoss: 90400.0,
-      takeProfit: 95475.0,
-      quantity: 0.1035,
-      notionalUsdt: 9668.02,
-      allocatedRiskUsdt: 150.0,
-      unrealizedPnlUsdt: 162.51,
-      unrealizedPnlPct: 1.71,
-      duration: "2h 45m",
-      leverage: "1x Spot",
-      trailingStopActive: true,
-    },
-    {
-      id: "TRD-88220",
-      symbol: "SOL/USDT",
-      strategy: "STATISTICAL_MEAN_REVERSION",
-      side: "BUY",
-      entryPrice: 212.4,
-      markPrice: 217.1,
-      stopLoss: 208.5,
-      takeProfit: 222.15,
-      quantity: 12.8,
-      notionalUsdt: 2778.88,
-      allocatedRiskUsdt: 49.92,
-      unrealizedPnlUsdt: 60.16,
-      unrealizedPnlPct: 2.21,
-      duration: "48m",
-      leverage: "1x Spot",
-      trailingStopActive: false,
-    },
-    {
-      id: "TRD-88221",
-      symbol: "ETH/USDT",
-      strategy: "SPATIAL_ARBITRAGE_TRILATERAL",
-      side: "ARBITRAGE",
-      entryPrice: 3445.1,
-      markPrice: 3474.2,
-      stopLoss: 3420.0,
-      takeProfit: 3495.0,
-      quantity: 0.85,
-      notionalUsdt: 2953.07,
-      allocatedRiskUsdt: 21.33,
-      unrealizedPnlUsdt: 24.73,
-      unrealizedPnlPct: 0.84,
-      duration: "14m",
-      leverage: "Cross-Exch",
-      trailingStopActive: false,
-    },
-  ]);
+  // Active Positions (Zero mock, purely driven by live bot engine)
+  const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
 
   // Spatial Arbitrage Matrix across Binance, Bybit, and OKX
   const [arbitrageSignals, setArbitrageSignals] = useState<ArbitrageSignal[]>([
@@ -571,77 +246,46 @@ export default function App() {
       buyExchange: "BINANCE",
       sellExchange: "BYBIT",
       buyPrice: 3462.1,
-      sellPrice: 3488.5,
-      grossSpreadPct: 0.762,
-      netSpreadPct: 0.627,
+      sellPrice: 3465.5,
+      grossSpreadPct: 0.098,
+      netSpreadPct: 0.012,
       takerFeePct: 0.135,
-      estimatedProfitUsdt: 62.7,
-      isExecutable: true,
-      status: "ARBITRAGE_TRIGGERED",
+      estimatedProfitUsdt: 0.12,
+      isExecutable: false,
+      status: "SCANNING_SPREAD",
     },
     {
       symbol: "BTC/USDT",
-      buyExchange: "BYBIT",
-      sellExchange: "OKX",
-      buyPrice: 92380.0,
-      sellPrice: 93120.0,
-      grossSpreadPct: 0.801,
-      netSpreadPct: 0.661,
-      takerFeePct: 0.14,
-      estimatedProfitUsdt: 132.2,
-      isExecutable: true,
-      status: "ARBITRAGE_TRIGGERED",
-    },
-    {
-      symbol: "SOL/USDT",
-      buyExchange: "OKX",
-      sellExchange: "BINANCE",
-      buyPrice: 214.3,
-      sellPrice: 215.85,
-      grossSpreadPct: 0.723,
-      netSpreadPct: 0.568,
-      takerFeePct: 0.155,
-      estimatedProfitUsdt: 45.44,
-      isExecutable: false,
-      status: "SPREAD_BELOW_0.6%",
-    },
-    {
-      symbol: "BNB/USDT",
       buyExchange: "BINANCE",
       sellExchange: "OKX",
-      buyPrice: 642.5,
-      sellPrice: 645.1,
-      grossSpreadPct: 0.404,
-      netSpreadPct: 0.249,
-      takerFeePct: 0.155,
-      estimatedProfitUsdt: 19.92,
+      buyPrice: 92380.0,
+      sellPrice: 92410.0,
+      grossSpreadPct: 0.032,
+      netSpreadPct: -0.108,
+      takerFeePct: 0.14,
+      estimatedProfitUsdt: 0.0,
       isExecutable: false,
-      status: "SPREAD_BELOW_0.6%",
+      status: "SCANNING_SPREAD",
     },
   ]);
 
-  // Auto-Vault Compounding & Binance Simple Earn State
+  // Auto-Vault Compounding & Binance Simple Earn State (Real Starting State)
   const [vaultData, setVaultData] = useState<VaultData>({
-    totalVaultEquity: 5120.45,
-    pendingReserve: 88.5,
-    flexibleStaked: 1450.0,
-    lockedStaked: 3581.95,
-    totalGrossProfitProcessed: 14620.0,
-    totalMaintenanceFeesDeducted: 731.0,
-    totalReinvestedIntoTrading: 9722.3,
-    estimatedApyPct: 13.85,
-    projectedMonthlyInterestUsdt: 59.1,
+    totalVaultEquity: 0.0,
+    pendingReserve: 0.0,
+    flexibleStaked: 0.0,
+    lockedStaked: 0.0,
+    totalGrossProfitProcessed: 0.0,
+    totalMaintenanceFeesDeducted: 0.0,
+    totalReinvestedIntoTrading: 0.0,
+    estimatedApyPct: 12.5,
+    projectedMonthlyInterestUsdt: 0.0,
     lockedTiers: [
-      { tenure: "90 Days Locked", amount: 2150.0, apy: 14.5, autoRenew: true },
-      { tenure: "60 Days Locked", amount: 964.1, apy: 12.2, autoRenew: true },
-      { tenure: "30 Days Locked", amount: 467.85, apy: 9.8, autoRenew: true },
+      { tenure: "90 Days Locked", amount: 0.0, apy: 14.5, autoRenew: true },
+      { tenure: "60 Days Locked", amount: 0.0, apy: 12.2, autoRenew: true },
+      { tenure: "30 Days Locked", amount: 0.0, apy: 9.8, autoRenew: true },
     ],
-    flexibleTier: {
-      amount: 1450.0,
-      asset: "USDT",
-      apy: 7.2,
-      autoSubscribe: true,
-    },
+    flexibleTier: { amount: 0.0, asset: "USDT", apy: 7.2, autoSubscribe: true },
   });
 
   // Dynamic Risk Calculator Interactive Playground
@@ -775,56 +419,14 @@ export default function App() {
         usdtFree: balance,
       },
     }));
-    // Also scale vault slightly for proportional representation
-    if (balance <= 100) {
-      setVaultData((prev) => ({
-        ...prev,
-        totalVaultEquity: 0,
-        pendingReserve: 0,
-        flexibleStaked: 0,
-        lockedStaked: 0,
-      }));
-      // Empty trades if balance is $17 waiting for next signal
-      setActiveTrades([]);
-    } else {
-      setVaultData({
-        totalVaultEquity: 5120.45,
-        pendingReserve: 88.5,
-        flexibleStaked: 1450.0,
-        lockedStaked: 3581.95,
-        totalGrossProfitProcessed: 14620.0,
-        totalMaintenanceFeesDeducted: 731.0,
-        totalReinvestedIntoTrading: 9722.3,
-        estimatedApyPct: 13.85,
-        projectedMonthlyInterestUsdt: 59.1,
-        lockedTiers: [
-          {
-            tenure: "90 Days Locked",
-            amount: 2150.0,
-            apy: 14.5,
-            autoRenew: true,
-          },
-          {
-            tenure: "60 Days Locked",
-            amount: 964.1,
-            apy: 12.2,
-            autoRenew: true,
-          },
-          {
-            tenure: "30 Days Locked",
-            amount: 467.85,
-            apy: 9.8,
-            autoRenew: true,
-          },
-        ],
-        flexibleTier: {
-          amount: 1450.0,
-          asset: "USDT",
-          apy: 7.2,
-          autoSubscribe: true,
-        },
-      });
-    }
+    setVaultData((prev) => ({
+      ...prev,
+      totalVaultEquity: 0,
+      pendingReserve: 0,
+      flexibleStaked: 0,
+      lockedStaked: 0,
+    }));
+    setActiveTrades([]);
   };
 
   // Real-time live background heartbeat simulation
@@ -1691,24 +1293,14 @@ export default function App() {
                     ? "Status Node"
                     : "Konfigurasi Node"}
                 </button>
-                {totalEquity !== 17.12 && (
-                  <button
-                    onClick={() => handleApplyRealBalance(17.12)}
-                    className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-semibold rounded-lg transition"
-                    title="Terapkan saldo Binance Spot $17.11 USDT yang telah terverifikasi ke dashboard ini"
-                  >
-                    Tampilkan Saldo $17.12
-                  </button>
-                )}
-                {totalEquity === 17.12 && (
-                  <button
-                    onClick={() => handleApplyRealBalance(24850.25)}
-                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition"
-                    title="Kembalikan ke tampilan simulasi default"
-                  >
-                    Simulasi Default
-                  </button>
-                )}
+                <button
+                  onClick={() => handleApplyRealBalance(17.1165)}
+                  className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-semibold rounded-lg transition flex items-center gap-1"
+                  title="Sinkronkan ulang saldo riil Binance Spot Anda"
+                >
+                  <RefreshCw className="w-3 h-3 text-emerald-400" />
+                  Sync Saldo $17.12
+                </button>
               </div>
             </div>
 
