@@ -30,11 +30,12 @@ export default function TelegramChatOpsView() {
       text: `🐝 MONEY For HONEY — Telemetry Status
 ━━━━━━━━━━━━━━━━━━━━
 ⚡ Engine Status: 🟢 ACTIVE (SAFE)
-📉 Daily Drawdown: 1.84% (Cap: 5.0%)
-🎯 Active Positions: 3
-🏦 Total Vault Reserve: $5,120.45 USDT
-📈 Est. APY: 13.85%
-🛡️ Testnet Mode: True`,
+💰 Real Spot Balance: 17.1165 USDT
+📉 Daily Drawdown: 0.00% (Cap: 5.0%)
+🎯 Active Positions: 0 (Scanning orderbook...)
+🏦 Total Vault Reserve: $0.00 USDT
+📈 Target APY: 12.50%
+🛡️ Production Mode: Live Binance Spot`,
       time: "15:30:13",
     },
   ]);
