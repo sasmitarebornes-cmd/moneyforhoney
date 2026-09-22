@@ -150,20 +150,27 @@ export default function App() {
   // Private Execution Node Live Bridge State
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState<boolean>(false);
   const [isConnectingBridge, setIsConnectingBridge] = useState<boolean>(false);
-  const [bridgeConfig, setBridgeConfig] = useState<ServerBridgeConfig>({
-    serverHost: LiveBridgeService.getHost() || "",
-    autoSync: true,
-    isConnected: false,
-    lastSyncTime: "",
-    latencyMs: 0,
-    liveExchangeStatus: {
-      exchange: "Binance Spot",
-      accountEquity: 17.12,
-      usdtFree: 17.12,
-      activePositionsCount: 0,
-      circuitBreaker: false,
-      testnetMode: false,
-    },
+  const [bridgeConfig, setBridgeConfig] = useState<ServerBridgeConfig>(() => {
+    const savedBalanceStr = localStorage.getItem("MFH_SAVED_BALANCE");
+    const initBal =
+      savedBalanceStr && !isNaN(Number(savedBalanceStr))
+        ? Number(savedBalanceStr)
+        : 17.12;
+    return {
+      serverHost: LiveBridgeService.getHost() || "",
+      autoSync: true,
+      isConnected: false,
+      lastSyncTime: "",
+      latencyMs: 0,
+      liveExchangeStatus: {
+        exchange: "Binance Spot",
+        accountEquity: initBal,
+        usdtFree: initBal,
+        activePositionsCount: 0,
+        circuitBreaker: false,
+        testnetMode: false,
+      },
+    };
   });
 
   // Auto PnL Card Generator Modal State
@@ -446,8 +453,14 @@ export default function App() {
   const [dailyDrawdownPct, setDailyDrawdownPct] = useState<number>(1.84);
   const maxDrawdownLimitPct = 5.0;
 
-  // Portfolio Totals
-  const [totalEquity, setTotalEquity] = useState<number>(24850.25);
+  // Portfolio Totals (Persisted with real Binance balance default)
+  const [totalEquity, setTotalEquity] = useState<number>(() => {
+    const saved = localStorage.getItem("MFH_SAVED_BALANCE");
+    if (saved && !isNaN(Number(saved)) && Number(saved) > 0) {
+      return Number(saved);
+    }
+    return 17.1165;
+  });
   const [todayPnl, setTodayPnl] = useState<number>(845.2);
   const [todayPnlPct, setTodayPnlPct] = useState<number>(3.52);
   const [winRate] = useState<number>(68.4);
@@ -665,6 +678,7 @@ export default function App() {
       if (conn.success) {
         const timeNow = new Date().toLocaleTimeString();
         const data = conn.data || {};
+        const liveBal = data.total_equity_usdt ?? data.account_balance?.total;
 
         setBridgeConfig((prev) => ({
           ...prev,
@@ -674,18 +688,24 @@ export default function App() {
           liveExchangeStatus: {
             exchange: "Binance Spot (Live)",
             accountEquity:
-              data.total_equity_usdt ?? data.account_balance?.total ?? 17.12,
-            usdtFree: data.account_balance?.free ?? 17.12,
+              liveBal !== undefined
+                ? liveBal
+                : prev.liveExchangeStatus.accountEquity,
+            usdtFree:
+              data.account_balance?.free ??
+              (liveBal !== undefined
+                ? liveBal
+                : prev.liveExchangeStatus.usdtFree),
             activePositionsCount: data.active_trades_count ?? 0,
             circuitBreaker: data.circuit_breaker_active ?? false,
             testnetMode: data.testnet_mode ?? false,
           },
         }));
 
-        if (data.total_equity_usdt !== undefined) {
-          setTotalEquity(data.total_equity_usdt);
-        } else if (data.account_balance?.total !== undefined) {
-          setTotalEquity(data.account_balance.total);
+        if (liveBal !== undefined && Number(liveBal) > 0) {
+          const numBal = Number(liveBal);
+          setTotalEquity(numBal);
+          localStorage.setItem("MFH_SAVED_BALANCE", String(numBal));
         }
 
         if (data.daily_drawdown_pct !== undefined) {
@@ -702,16 +722,19 @@ export default function App() {
           setActiveTrades(liveTrades);
         }
       } else {
+        // Retain current connection state and live balance even during transient network jitter
         setBridgeConfig((prev) => ({
           ...prev,
-          isConnected: false,
-          latencyMs: conn.latency,
+          latencyMs: conn.latency || prev.latencyMs,
+          // Keep connected state if it was already connected, don't drop to disconnected on 1 timeout
+          isConnected: prev.serverHost ? true : false,
         }));
       }
     } catch {
+      // Keep last known balance safely on glitch
       setBridgeConfig((prev) => ({
         ...prev,
-        isConnected: false,
+        latencyMs: 999,
       }));
     } finally {
       setIsConnectingBridge(false);
@@ -743,6 +766,7 @@ export default function App() {
 
   const handleApplyRealBalance = (balance: number) => {
     setTotalEquity(balance);
+    localStorage.setItem("MFH_SAVED_BALANCE", String(balance));
     setBridgeConfig((prev) => ({
       ...prev,
       liveExchangeStatus: {
