@@ -10,22 +10,19 @@ Exposes REST endpoints consumed by the frontend and external webhooks:
 """
 
 import time
-import logging
-from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Header
+from typing import Any
+
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.db.database import db_manager
-from app.engine.arbitrage import arbitrage_scanner
 from app.engine.backtest import backtest_engine
 from app.engine.confluence import confluence_engine
 from app.engine.exchange import exchange_service
 from app.engine.funding_arbitrage import funding_engine
 from app.engine.risk import risk_engine
 from app.engine.router import smart_router
-from app.engine.scanner import market_scanner
-from app.engine.strategy import strategy_engine
 from app.engine.trailing import trailing_manager
 from app.engine.vault import vault_manager
 from app.services.notifier import notifier
@@ -36,8 +33,8 @@ router = APIRouter(prefix="/api", tags=["Trading Engine"])
 
 # Request / Response Schemas
 class CircuitBreakerToggleRequest(BaseModel):
-    active: Optional[bool] = None
-    reason: Optional[str] = "Operator Dashboard Trigger"
+    active: bool | None = None
+    reason: str | None = "Operator Dashboard Trigger"
 
 
 class ManualTradeRequest(BaseModel):
@@ -55,7 +52,7 @@ class ExecuteOrderRequest(BaseModel):
     stop_loss: float
     take_profit: float
     account_equity: float = 10000.0
-    strategy: Optional[str] = "DYNAMIC_BREAKOUT_MOMENTUM"
+    strategy: str | None = "DYNAMIC_BREAKOUT_MOMENTUM"
 
 
 class CloseTradeRequest(BaseModel):
@@ -76,7 +73,7 @@ class DeployFundingRequest(BaseModel):
 
 class TelegramCommandRequest(BaseModel):
     command: str = "/status"
-    chat_id: Optional[str] = None
+    chat_id: str | None = None
 
 
 class BacktestRequest(BaseModel):
@@ -131,7 +128,7 @@ async def toggle_circuit_breaker(payload: CircuitBreakerToggleRequest):
             f"{payload.reason or 'Manual Emergency Trip'} (Cancelled {cancelled} open orders)",
             risk_engine.current_drawdown_pct,
         )
-    
+
     await db_manager.update_equity_snapshot(
         starting_equity=risk_engine.daily_starting_equity or 10000.0,
         peak_equity=risk_engine.daily_peak_equity or 10000.0,
@@ -155,60 +152,7 @@ async def toggle_circuit_breaker(payload: CircuitBreakerToggleRequest):
 async def get_active_trades():
     """Returns currently open high-conviction positions from persistent storage."""
     db_trades = await db_manager.get_active_trades()
-    if db_trades:
-        return db_trades
-
-    # Default baseline active positions if database is freshly initialized
-    return [
-        {
-            "id": "TRD-88219",
-            "symbol": "BTC/USDT",
-            "strategy": "DYNAMIC_BREAKOUT_MOMENTUM",
-            "side": "BUY",
-            "entry_price": 91850.00,
-            "mark_price": 93240.50,
-            "stop_loss": 90400.00,
-            "take_profit": 95475.00,
-            "quantity": 0.1035,
-            "notional_usdt": 9506.47,
-            "allocated_risk_usdt": 150.00,
-            "realized_pnl_usdt": 0.0,
-            "duration": "2h 45m",
-            "status": "OPEN",
-        },
-        {
-            "id": "TRD-88220",
-            "symbol": "SOL/USDT",
-            "strategy": "STATISTICAL_MEAN_REVERSION",
-            "side": "BUY",
-            "entry_price": 212.40,
-            "mark_price": 216.85,
-            "stop_loss": 208.50,
-            "take_profit": 222.15,
-            "quantity": 12.8,
-            "notional_usdt": 2718.72,
-            "allocated_risk_usdt": 49.92,
-            "realized_pnl_usdt": 0.0,
-            "duration": "48m",
-            "status": "OPEN",
-        },
-        {
-            "id": "TRD-88221",
-            "symbol": "ETH/USDT",
-            "strategy": "SPATIAL_ARBITRAGE_TRILATERAL",
-            "side": "ARBITRAGE_SPREAD",
-            "entry_price": 3445.10,
-            "mark_price": 3472.00,
-            "stop_loss": 3420.00,
-            "take_profit": 3495.00,
-            "quantity": 0.85,
-            "notional_usdt": 2928.33,
-            "allocated_risk_usdt": 21.33,
-            "realized_pnl_usdt": 0.0,
-            "duration": "14m",
-            "status": "OPEN",
-        },
-    ]
+    return db_trades if db_trades is not None else []
 
 
 @router.post("/trades/execute")
@@ -319,9 +263,21 @@ async def close_trade(payload: CloseTradeRequest):
         # Check if it was one of the default seed trades
         default_seed_ids = ["TRD-88219", "TRD-88220", "TRD-88221"]
         if payload.trade_id in default_seed_ids:
-            entry_price = 91850.0 if "88219" in payload.trade_id else (212.4 if "88220" in payload.trade_id else 3445.1)
-            qty = 0.1035 if "88219" in payload.trade_id else (12.8 if "88220" in payload.trade_id else 0.85)
-            symbol = "BTC/USDT" if "88219" in payload.trade_id else ("SOL/USDT" if "88220" in payload.trade_id else "ETH/USDT")
+            entry_price = (
+                91850.0
+                if "88219" in payload.trade_id
+                else (212.4 if "88220" in payload.trade_id else 3445.1)
+            )
+            qty = (
+                0.1035
+                if "88219" in payload.trade_id
+                else (12.8 if "88220" in payload.trade_id else 0.85)
+            )
+            symbol = (
+                "BTC/USDT"
+                if "88219" in payload.trade_id
+                else ("SOL/USDT" if "88220" in payload.trade_id else "ETH/USDT")
+            )
             target_trade = {
                 "id": payload.trade_id,
                 "symbol": symbol,
@@ -334,14 +290,16 @@ async def close_trade(payload: CloseTradeRequest):
             }
             await db_manager.save_trade(target_trade)
         else:
-            raise HTTPException(status_code=404, detail="Trade not found or already closed.")
+            raise HTTPException(
+                status_code=404, detail="Trade not found or already closed."
+            )
 
     # Calculate realized PnL
     side_mult = 1.0 if target_trade["side"] == "BUY" else -1.0
     price_diff = (payload.exit_price - target_trade["entry_price"]) * side_mult
     realized_pnl = round(price_diff * target_trade["quantity"], 2)
 
-    closed_trade = await db_manager.close_trade(
+    await db_manager.close_trade(
         trade_id=payload.trade_id,
         exit_price=payload.exit_price,
         realized_pnl=realized_pnl,
@@ -350,13 +308,15 @@ async def close_trade(payload: CloseTradeRequest):
     waterfall_res = None
     if realized_pnl > 0:
         waterfall_res = vault_manager.distribute_trade_profit(realized_pnl)
-        await db_manager.record_vault_distribution({
-            "gross_profit": waterfall_res.gross_profit,
-            "maintenance_fee": waterfall_res.maintenance_fee,
-            "reinvest_amount": waterfall_res.reinvest_amount,
-            "vault_allocation": waterfall_res.vault_allocation,
-            "total_vault_reserve": waterfall_res.total_accumulated_vault,
-        })
+        await db_manager.record_vault_distribution(
+            {
+                "gross_profit": waterfall_res.gross_profit,
+                "maintenance_fee": waterfall_res.maintenance_fee,
+                "reinvest_amount": waterfall_res.reinvest_amount,
+                "vault_allocation": waterfall_res.vault_allocation,
+                "total_vault_reserve": waterfall_res.total_accumulated_vault,
+            }
+        )
         await notifier.notify_profit_harvest(
             gross_profit=waterfall_res.gross_profit,
             maintenance_fee=waterfall_res.maintenance_fee,
@@ -450,9 +410,24 @@ async def get_vault_status():
             "estimated_apy_pct": 13.85,
             "projected_monthly_interest_usdt": 55.98,
             "locked_tiers": [
-                {"tenure": "90 Days Locked", "amount": 2100.00, "apy": 14.50, "auto_renew": True},
-                {"tenure": "60 Days Locked", "amount": 950.00, "apy": 12.20, "auto_renew": True},
-                {"tenure": "30 Days Locked", "amount": 467.85, "apy": 9.80, "auto_renew": True},
+                {
+                    "tenure": "90 Days Locked",
+                    "amount": 2100.00,
+                    "apy": 14.50,
+                    "auto_renew": True,
+                },
+                {
+                    "tenure": "60 Days Locked",
+                    "amount": 950.00,
+                    "apy": 12.20,
+                    "auto_renew": True,
+                },
+                {
+                    "tenure": "30 Days Locked",
+                    "amount": 467.85,
+                    "apy": 9.80,
+                    "auto_renew": True,
+                },
             ],
             "flexible_tier": {
                 "amount": 1250.00,
@@ -468,13 +443,15 @@ async def get_vault_status():
 async def distribute_profit(payload: ProfitHarvestRequest):
     """Triggers the 5% fee / 70% reinvest / 30% vault allocation waterfall."""
     res = vault_manager.distribute_trade_profit(payload.gross_profit)
-    await db_manager.record_vault_distribution({
-        "gross_profit": res.gross_profit,
-        "maintenance_fee": res.maintenance_fee,
-        "reinvest_amount": res.reinvest_amount,
-        "vault_allocation": res.vault_allocation,
-        "total_vault_reserve": res.total_accumulated_vault,
-    })
+    await db_manager.record_vault_distribution(
+        {
+            "gross_profit": res.gross_profit,
+            "maintenance_fee": res.maintenance_fee,
+            "reinvest_amount": res.reinvest_amount,
+            "vault_allocation": res.vault_allocation,
+            "total_vault_reserve": res.total_accumulated_vault,
+        }
+    )
 
     await notifier.notify_profit_harvest(
         gross_profit=res.gross_profit,
@@ -531,7 +508,9 @@ async def evaluate_trailing_stops():
     evaluations = []
     for trade in active_trades:
         current_price = trade.get("mark_price", trade["entry_price"])
-        high_price = trade.get("highest_price", max(trade["entry_price"], current_price))
+        high_price = trade.get(
+            "highest_price", max(trade["entry_price"], current_price)
+        )
         low_price = trade.get("lowest_price", min(trade["entry_price"], current_price))
         res = trailing_manager.evaluate_position_trailing(
             trade_id=trade["id"],
@@ -545,16 +524,18 @@ async def evaluate_trailing_stops():
             lowest_price=low_price,
             atr=trade["entry_price"] * 0.015,
         )
-        evaluations.append({
-            "trade_id": res.trade_id,
-            "symbol": res.symbol,
-            "side": res.side,
-            "current_sl": res.new_sl,
-            "is_breakeven_activated": res.is_breakeven_activated,
-            "is_trailing_stepped": res.is_trailing_stepped,
-            "profit_r": res.current_profit_r,
-            "status_message": res.message,
-        })
+        evaluations.append(
+            {
+                "trade_id": res.trade_id,
+                "symbol": res.symbol,
+                "side": res.side,
+                "current_sl": res.new_sl,
+                "is_breakeven_activated": res.is_breakeven_activated,
+                "is_trailing_stepped": res.is_trailing_stepped,
+                "profit_r": res.current_profit_r,
+                "status_message": res.message,
+            }
+        )
     return evaluations
 
 
@@ -568,7 +549,9 @@ async def get_confluence_status():
     results = []
     for sym in symbols:
         ticker = await exchange_service.fetch_ticker(sym)
-        price = ticker.get("last", 92000.0 if "BTC" in sym else (3450.0 if "ETH" in sym else 215.0))
+        price = ticker.get(
+            "last", 92000.0 if "BTC" in sym else (3450.0 if "ETH" in sym else 215.0)
+        )
         # Evaluate long & short alignment
         eval_long = confluence_engine.evaluate_macro_confluence(
             symbol=sym,
@@ -576,15 +559,19 @@ async def get_confluence_status():
             current_price=price,
             macro_ohlcv=[],  # uses realistic mathematical model
         )
-        results.append({
-            "symbol": sym,
-            "current_price": price,
-            "macro_trend": eval_long.macro_trend,
-            "macro_ema_200": eval_long.macro_ema_200,
-            "confluence_score": eval_long.confluence_score,
-            "is_long_approved": eval_long.is_approved,
-            "filter_status": "CONFLUENCE_HIGH" if eval_long.confluence_score >= 70.0 else "FILTER_BLOCKED",
-        })
+        results.append(
+            {
+                "symbol": sym,
+                "current_price": price,
+                "macro_trend": eval_long.macro_trend,
+                "macro_ema_200": eval_long.macro_ema_200,
+                "confluence_score": eval_long.confluence_score,
+                "is_long_approved": eval_long.is_approved,
+                "filter_status": "CONFLUENCE_HIGH"
+                if eval_long.confluence_score >= 70.0
+                else "FILTER_BLOCKED",
+            }
+        )
     return results
 
 
@@ -598,7 +585,9 @@ async def get_funding_opportunities():
     return {
         "opportunities": [o.__dict__ for o in opps],
         "active_delta_neutral_positions": funding_engine.active_delta_neutral_positions,
-        "average_annual_apr_pct": round(sum(o.annualized_apr_pct for o in opps) / max(1, len(opps)), 2),
+        "average_annual_apr_pct": round(
+            sum(o.annualized_apr_pct for o in opps) / max(1, len(opps)), 2
+        ),
     }
 
 
@@ -620,11 +609,11 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest):
             spot_price=payload.spot_price,
             perp_price=payload.spot_price,
         )
-    except Exception as exec_err:
+    except (RuntimeError, ValueError, OSError, HTTPException) as exec_err:
         raise HTTPException(
             status_code=500,
-            detail=f"Atomic Delta-Neutral execution aborted: {exec_err}"
-        )
+            detail=f"Atomic Delta-Neutral execution aborted: {exec_err}",
+        ) from exec_err
 
     # 2. Record hedged position in engine
     pos = funding_engine.create_delta_neutral_position(
@@ -660,20 +649,24 @@ async def test_telegram_chatops(payload: TelegramCommandRequest):
 
 @router.post("/telegram/webhook")
 async def telegram_webhook(
-    update: Dict[str, Any],
-    x_telegram_bot_api_secret_token: Optional[str] = Header(None, alias="X-Telegram-Bot-Api-Secret-Token")
+    update: dict[str, Any],
+    x_telegram_bot_api_secret_token: str | None = Header(
+        None, alias="X-Telegram-Bot-Api-Secret-Token"
+    ),
 ):
     """
     Receives webhook updates securely from Telegram Bot API.
     Validates X-Telegram-Bot-Api-Secret-Token to prevent spoofed unauthorized calls.
     """
     secret = getattr(settings, "TELEGRAM_WEBHOOK_SECRET", None)
-    if secret and secret != "honey_telegram_secret_token_change_me":
-        if x_telegram_bot_api_secret_token != secret:
-            raise HTTPException(
-                status_code=403,
-                detail="Forbidden: Invalid Telegram Webhook Secret Token"
-            )
+    if (
+        secret
+        and secret != "honey_telegram_secret_token_change_me"
+        and x_telegram_bot_api_secret_token != secret
+    ):
+        raise HTTPException(
+            status_code=403, detail="Forbidden: Invalid Telegram Webhook Secret Token"
+        )
 
     message = update.get("message", {})
     text = message.get("text", "")
@@ -736,4 +729,3 @@ async def run_quantitative_backtest(payload: BacktestRequest):
             "simulated_trajectories": mc_res.simulated_trajectories,
         },
     }
-

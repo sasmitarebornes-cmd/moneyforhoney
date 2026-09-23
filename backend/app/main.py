@@ -11,26 +11,26 @@ Initializes background workers:
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
 from app.api.endpoints import router as api_router
+from app.core.config import settings
 from app.db.database import db_manager
-from app.engine.exchange import exchange_service
-from app.engine.risk import risk_engine
-from app.engine.vault import vault_manager
 from app.engine.arbitrage import arbitrage_scanner
+from app.engine.confluence import confluence_engine
+from app.engine.exchange import exchange_service
+from app.engine.funding_arbitrage import funding_engine
+from app.engine.risk import risk_engine
 from app.engine.scanner import market_scanner
 from app.engine.strategy import strategy_engine
 from app.engine.trailing import trailing_manager
-from app.engine.confluence import confluence_engine
-from app.engine.funding_arbitrage import funding_engine
+from app.engine.vault import vault_manager
 from app.services.notifier import notifier
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("money_for_honey.main")
 
@@ -52,9 +52,13 @@ async def autonomous_trading_loop():
     if snapshot:
         risk_engine.initialize_daily_equity(snapshot.get("starting_equity", 10000.0))
         risk_engine.daily_peak_equity = snapshot.get("peak_equity", 10000.0)
-        risk_engine.circuit_breaker_active = bool(snapshot.get("circuit_breaker_active", 0))
+        risk_engine.circuit_breaker_active = bool(
+            snapshot.get("circuit_breaker_active", 0)
+        )
         risk_engine.trip_reason = snapshot.get("trip_reason")
-        logger.info(f"Recovered persistent equity: Baseline=${risk_engine.daily_starting_equity:,.2f}, Peak=${risk_engine.daily_peak_equity:,.2f}")
+        logger.info(
+            f"Recovered persistent equity: Baseline=${risk_engine.daily_starting_equity:,.2f}, Peak=${risk_engine.daily_peak_equity:,.2f}"
+        )
     else:
         risk_engine.initialize_daily_equity(10000.0)
 
@@ -76,7 +80,14 @@ async def autonomous_trading_loop():
             live_ohlcv = await exchange_service.fetch_live_ohlcv("BTC/USDT", "15m", 50)
             if not live_ohlcv or len(live_ohlcv) < 20:
                 live_ohlcv = [
-                    [1710000000 + i * 900, 91500 + i * 20, 91600 + i * 25, 91400 + i * 15, 91550 + i * 20, 150.0]
+                    [
+                        1710000000 + i * 900,
+                        91500 + i * 20,
+                        91600 + i * 25,
+                        91400 + i * 15,
+                        91550 + i * 20,
+                        150.0,
+                    ]
                     for i in range(50)
                 ]
             regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
@@ -93,17 +104,71 @@ async def autonomous_trading_loop():
                 )
 
                 if not confluence.is_approved:
-                    logger.warning(f"Trade filtered by Confluence Engine: {confluence.rejection_reason}")
+                    logger.warning(
+                        f"Trade filtered by Confluence Engine: {confluence.rejection_reason}"
+                    )
                 else:
-                    logger.info(f"Signal Approved by Confluence ({confluence.confluence_score}%): {signal.strategy_name} -> {signal.action}")
-                    # Calculate dynamic position size
+                    logger.info(
+                        f"Signal Approved by Confluence ({confluence.confluence_score}%): {signal.strategy_name} -> {signal.action}"
+                    )
+
+                    # Fetch real account equity from Binance Spot wallet (or fallback safely)
+                    try:
+                        bal_data = await exchange_service.fetch_account_balance()
+                        effective_equity = float(bal_data.get("total") or 17.1165)
+                    except (RuntimeError, ValueError, OSError, KeyError):
+                        effective_equity = 17.1165
+
+                    # Calculate dynamic position size (with $10 floor for small accounts)
                     size_res = risk_engine.calculate_position_size(
-                        equity=10000.0,
+                        equity=effective_equity,
                         entry_price=signal.entry_price,
                         stop_loss=signal.stop_loss,
                         symbol=signal.symbol,
                     )
-                    if size_res.is_valid:
+                    if size_res.is_valid and size_res.quantity > 0:
+                        try:
+                            # Execute real order on Binance Spot (or testnet/safe mode)
+                            exec_res = await exchange_service.execute_order(
+                                symbol=signal.symbol,
+                                side=signal.action,
+                                quantity=size_res.quantity,
+                                price=signal.entry_price,
+                            )
+                        except (RuntimeError, ValueError, OSError) as ex:
+                            logger.error(
+                                f"Live order execution error on {signal.symbol}: {ex}"
+                            )
+                            exec_res = {
+                                "status": "SIMULATED",
+                                "order_id": f"SIM-{int(asyncio.get_event_loop().time() * 1000)}",
+                            }
+
+                        # Record trade in persistent database
+                        trade_id = f"TRD-{int(asyncio.get_event_loop().time() * 1000) % 1000000}"
+                        trade_record = {
+                            "id": trade_id,
+                            "symbol": signal.symbol,
+                            "strategy": signal.strategy_name,
+                            "side": signal.action,
+                            "entry_price": signal.entry_price,
+                            "mark_price": signal.entry_price,
+                            "stop_loss": signal.stop_loss,
+                            "take_profit": signal.take_profit,
+                            "quantity": size_res.quantity,
+                            "notional_usdt": size_res.notional_value,
+                            "allocated_risk_usdt": size_res.risk_amount,
+                            "realized_pnl_usdt": 0.0,
+                            "status": "OPEN",
+                            "duration": "1m",
+                            "details": {
+                                "execution": exec_res,
+                                "confluence": confluence.confluence_score,
+                            },
+                        }
+                        await db_manager.save_trade(trade_record)
+
+                        # Broadcast trade opening to Telegram DM & Official Channel
                         await notifier.notify_trade_opened(
                             symbol=signal.symbol,
                             strategy=signal.strategy_name,
@@ -120,8 +185,12 @@ async def autonomous_trading_loop():
             active_trades = await db_manager.get_active_trades()
             for trade in active_trades:
                 current_price = trade.get("mark_price", trade["entry_price"])
-                high_price = trade.get("highest_price", max(trade["entry_price"], current_price))
-                low_price = trade.get("lowest_price", min(trade["entry_price"], current_price))
+                high_price = trade.get(
+                    "highest_price", max(trade["entry_price"], current_price)
+                )
+                low_price = trade.get(
+                    "lowest_price", min(trade["entry_price"], current_price)
+                )
                 trailing_res = trailing_manager.evaluate_position_trailing(
                     trade_id=trade["id"],
                     symbol=trade["symbol"],
@@ -134,8 +203,13 @@ async def autonomous_trading_loop():
                     lowest_price=low_price,
                     atr=trade["entry_price"] * 0.015,
                 )
-                if trailing_res.is_breakeven_activated or trailing_res.is_trailing_stepped:
-                    logger.info(f"Trailing Stop Adjusted for {trade['id']}: {trailing_res.message}")
+                if (
+                    trailing_res.is_breakeven_activated
+                    or trailing_res.is_trailing_stepped
+                ):
+                    logger.info(
+                        f"Trailing Stop Adjusted for {trade['id']}: {trailing_res.message}"
+                    )
 
             # 4. Spatial Arbitrage Cross-Exchange Scan
             quotes = await arbitrage_scanner.fetch_live_quotes("ETH/USDT")
@@ -152,7 +226,9 @@ async def autonomous_trading_loop():
                 funding_opps = funding_engine.scan_funding_rates()
                 for opp in funding_opps:
                     if opp.annualized_apr_pct >= 12.0:
-                        logger.info(f"Funding Yield Opportunity: {opp.symbol} at {opp.annualized_apr_pct}% APR on {opp.exchange}")
+                        logger.info(
+                            f"Funding Yield Opportunity: {opp.symbol} at {opp.annualized_apr_pct}% APR on {opp.exchange}"
+                        )
 
             # 6. Vault Auto-Sweep Check
             if vault_manager.total_vault_reserve >= 10.0:
@@ -171,7 +247,7 @@ async def autonomous_trading_loop():
             logger.info("Autonomous trading engine task cancelled.")
             break
         except Exception as e:
-            logger.error(f"Error in autonomous engine loop: {e}", exc_info=True)
+            logger.exception("Error in autonomous engine loop: %s", e)
             await asyncio.sleep(5)
 
 
