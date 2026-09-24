@@ -92,9 +92,24 @@ async def autonomous_trading_loop():
                 ]
             regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
 
+            # Periodic live scanner heartbeat log (every 2 cycles = ~10s)
+            if iteration % 2 == 1:
+                logger.info(
+                    f"🔍 [Binance Market Scanner #{iteration}] {regime.symbol} | "
+                    f"Price=${regime.current_price:,.2f} | ADX={regime.adx} ({regime.regime}) | "
+                    f"RSI={regime.rsi_14:.1f} | BB=[${regime.lower_bollinger:,.1f} - ${regime.upper_bollinger:,.1f}]"
+                )
+
+            # Check if there is already an active open position for this symbol
+            active_trades = await db_manager.get_active_trades()
+            has_open_position = any(
+                t.get("status") == "OPEN" and t.get("symbol") == regime.symbol
+                for t in active_trades
+            )
+
             # Evaluate strategy signals based on regime
             signal = strategy_engine.generate_signal(regime)
-            if signal and iteration % 6 == 0:
+            if signal and not has_open_position:
                 # 2.1 Multi-Timeframe Confluence Verification
                 confluence = confluence_engine.evaluate_macro_confluence(
                     symbol=signal.symbol,
@@ -246,8 +261,8 @@ async def autonomous_trading_loop():
         except asyncio.CancelledError:
             logger.info("Autonomous trading engine task cancelled.")
             break
-        except Exception as e:
-            logger.exception("Error in autonomous engine loop: %s", e)
+        except Exception:
+            logger.exception("Error in autonomous engine loop")
             await asyncio.sleep(5)
 
 

@@ -9,8 +9,7 @@ Prevents counter-trend whipsaws and false breakouts by requiring:
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional
-import numpy as np
+
 import pandas as pd
 
 logger = logging.getLogger("money_for_honey.confluence")
@@ -22,16 +21,18 @@ class ConfluenceFilterResult:
     proposed_action: str  # "BUY" | "SELL"
     is_approved: bool
     confluence_score: float  # 0.0 - 100.0%
-    macro_trend: str  # "STRONG_BULLISH" | "BULLISH" | "BEARISH" | "STRONG_BEARISH" | "NEUTRAL"
+    macro_trend: (
+        str  # "STRONG_BULLISH" | "BULLISH" | "BEARISH" | "STRONG_BEARISH" | "NEUTRAL"
+    )
     macro_ema_200: float
     current_price: float
-    rejection_reason: Optional[str] = None
+    rejection_reason: str | None = None
 
 
 class MultiTimeframeConfluenceEngine:
     """Enforces macro trend alignment on all execution signals."""
 
-    def __init__(self, min_confluence_threshold: float = 70.0):
+    def __init__(self, min_confluence_threshold: float = 50.0):
         self.min_confluence_threshold = min_confluence_threshold
 
     def compute_ema(self, series: pd.Series, period: int) -> pd.Series:
@@ -42,7 +43,7 @@ class MultiTimeframeConfluenceEngine:
         symbol: str,
         proposed_action: str,  # "BUY" | "SELL"
         current_price: float,
-        macro_ohlcv: List[List[float]],
+        macro_ohlcv: list[list[float]],
     ) -> ConfluenceFilterResult:
         """
         Parses 4H/1D OHLCV series and evaluates trend alignment.
@@ -60,7 +61,9 @@ class MultiTimeframeConfluenceEngine:
                 rejection_reason=None,
             )
 
-        df = pd.DataFrame(macro_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]).astype(float)
+        df = pd.DataFrame(
+            macro_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+        ).astype(float)
         close = df["close"]
         macro_price = float(close.iloc[-1])
 
@@ -72,7 +75,7 @@ class MultiTimeframeConfluenceEngine:
         delta = close.diff()
         gain = delta.clip(lower=0).ewm(alpha=1.0 / 14, adjust=False).mean()
         loss = (-delta.clip(upper=0)).ewm(alpha=1.0 / 14, adjust=False).mean()
-        macro_rsi = float((100 - (100 / (1 + (gain / (loss + 1e-9))))) .iloc[-1])
+        macro_rsi = float((100 - (100 / (1 + (gain / (loss + 1e-9))))).iloc[-1])
 
         # Determine macro regime
         score = 50.0
@@ -100,27 +103,15 @@ class MultiTimeframeConfluenceEngine:
         is_approved = True
         rejection_reason = None
 
-        if proposed_action == "BUY":
-            if macro_price < ema_200:
-                is_approved = False
-                rejection_reason = (
-                    f"COUNTER-TREND BLOCKED: BUY order rejected because macro 4H price (${macro_price:,.2f}) "
-                    f"is below Macro EMA 200 (${ema_200:,.2f}). Trend is {macro_trend}."
-                )
-            elif score < self.min_confluence_threshold:
-                is_approved = False
-                rejection_reason = f"LOW CONFLUENCE: Score {score:.1f}% is below required {self.min_confluence_threshold}%."
-
-        elif proposed_action == "SELL":
-            if macro_price > ema_200:
-                is_approved = False
-                rejection_reason = (
-                    f"COUNTER-TREND BLOCKED: Short order rejected because macro 4H price (${macro_price:,.2f}) "
-                    f"is above Macro EMA 200 (${ema_200:,.2f}). Trend is {macro_trend}."
-                )
-            elif (100.0 - score) < self.min_confluence_threshold:
-                is_approved = False
-                rejection_reason = f"LOW CONFLUENCE: Bearish alignment score {(100.0 - score):.1f}% below required threshold."
+        if proposed_action == "BUY" and score < self.min_confluence_threshold:
+            is_approved = False
+            rejection_reason = f"LOW CONFLUENCE: Score {score:.1f}% is below required {self.min_confluence_threshold}%."
+        elif (
+            proposed_action == "SELL"
+            and (100.0 - score) < self.min_confluence_threshold
+        ):
+            is_approved = False
+            rejection_reason = f"LOW CONFLUENCE: Bearish alignment score {(100.0 - score):.1f}% below required threshold."
 
         return ConfluenceFilterResult(
             symbol=symbol,

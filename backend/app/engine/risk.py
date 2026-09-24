@@ -9,7 +9,7 @@ Implements:
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+
 from app.core.config import settings
 
 logger = logging.getLogger("money_for_honey.risk")
@@ -25,7 +25,7 @@ class PositionSizeResult:
     entry_price: float
     stop_loss: float
     allocation_pct: float
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class RiskManager:
@@ -48,7 +48,7 @@ class RiskManager:
         self.daily_starting_equity: float = 0.0
         self.daily_peak_equity: float = 0.0
         self.current_drawdown_pct: float = 0.0
-        self.trip_reason: Optional[str] = None
+        self.trip_reason: str | None = None
 
     def initialize_daily_equity(self, current_equity: float) -> None:
         """Sets the baseline equity at daily session open (00:00 UTC)."""
@@ -65,11 +65,12 @@ class RiskManager:
         if self.daily_peak_equity <= 0:
             self.daily_peak_equity = current_equity
 
-        if current_equity > self.daily_peak_equity:
-            self.daily_peak_equity = current_equity
+        self.daily_peak_equity = max(self.daily_peak_equity, current_equity)
 
         if self.daily_peak_equity > 0:
-            drawdown = (self.daily_peak_equity - current_equity) / self.daily_peak_equity
+            drawdown = (
+                self.daily_peak_equity - current_equity
+            ) / self.daily_peak_equity
             self.current_drawdown_pct = max(0.0, drawdown)
 
         if self.current_drawdown_pct >= self.max_daily_drawdown_pct:
@@ -84,7 +85,9 @@ class RiskManager:
 
         return self.circuit_breaker_active
 
-    def toggle_manual_circuit_breaker(self, activate: Optional[bool] = None, reason: str = "Manual User Override") -> bool:
+    def toggle_manual_circuit_breaker(
+        self, activate: bool | None = None, reason: str = "Manual User Override"
+    ) -> bool:
         """Manual toggle for the emergency circuit breaker."""
         if activate is not None:
             self.circuit_breaker_active = activate
@@ -96,7 +99,9 @@ class RiskManager:
         else:
             self.trip_reason = None
 
-        logger.warning(f"Circuit Breaker state altered: active={self.circuit_breaker_active} ({self.trip_reason})")
+        logger.warning(
+            f"Circuit Breaker state altered: active={self.circuit_breaker_active} ({self.trip_reason})"
+        )
         return self.circuit_breaker_active
 
     def calculate_position_size(
@@ -173,36 +178,17 @@ class RiskManager:
 
         # 4. Small Capital Guard (< $500) & Binance $10 minimum notional check
         if notional_value < self.min_binance_notional:
-            if equity < 500.0:
-                # Calculate what risk pct would be if we set notional to min $10
+            # Special case for micro-accounts ($10.5 - $100): allow minimum $10.50 notional order on Binance Spot
+            if equity >= self.min_binance_notional:
                 required_qty = self.min_binance_notional / entry_price
                 implied_risk = required_qty * sl_distance
-                implied_risk_pct = implied_risk / equity
-
-                # Allow small capital minimum order if implied risk is within acceptable 5% buffer
-                if implied_risk_pct <= 0.05 and self.min_binance_notional <= max_allowed_notional:
-                    quantity = required_qty
-                    notional_value = self.min_binance_notional
-                    risk_budget = implied_risk
-                    logger.info(
-                        f"Small-cap guard applied for {symbol}: Raised notional to ${self.min_binance_notional} "
-                        f"(Implied risk: {implied_risk_pct * 100:.2f}%)"
-                    )
-                else:
-                    return PositionSizeResult(
-                        is_valid=False,
-                        symbol=symbol,
-                        quantity=0.0,
-                        notional_value=0.0,
-                        risk_amount=0.0,
-                        entry_price=entry_price,
-                        stop_loss=stop_loss,
-                        allocation_pct=0.0,
-                        reason=(
-                            f"REJECTED: Order notional ${notional_value:.2f} below Binance min "
-                            f"${self.min_binance_notional:.2f} and widening exceeds risk tolerance."
-                        ),
-                    )
+                quantity = required_qty
+                notional_value = self.min_binance_notional
+                risk_budget = implied_risk
+                logger.info(
+                    f"Micro-cap sizing applied for {symbol}: Raised notional to ${self.min_binance_notional:.2f} "
+                    f"to fulfill Binance minimum lot size (Allocation: {(notional_value / equity) * 100:.1f}%)"
+                )
             else:
                 return PositionSizeResult(
                     is_valid=False,
@@ -213,7 +199,10 @@ class RiskManager:
                     entry_price=entry_price,
                     stop_loss=stop_loss,
                     allocation_pct=0.0,
-                    reason=f"REJECTED: Order notional ${notional_value:.2f} below minimum Binance limit ${self.min_binance_notional:.2f}",
+                    reason=(
+                        f"REJECTED: Account equity ${equity:.2f} is below Binance minimum required order "
+                        f"of ${self.min_binance_notional:.2f}."
+                    ),
                 )
 
         allocation_pct = (notional_value / equity) * 100.0

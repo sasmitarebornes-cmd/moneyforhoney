@@ -9,7 +9,7 @@ Implements:
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+
 from app.engine.scanner import MarketRegime
 
 logger = logging.getLogger("money_for_honey.strategy")
@@ -36,7 +36,7 @@ class MultiStrategyEngine:
         self.atr_multiplier_sl = atr_multiplier_sl
         self.risk_reward_target = risk_reward_target
 
-    def evaluate_breakout(self, regime: MarketRegime) -> Optional[TradeSignal]:
+    def evaluate_breakout(self, regime: MarketRegime) -> TradeSignal | None:
         """
         Executes Breakout strategy when ADX > 25.
         Long on break above 20-period Donchian High.
@@ -46,7 +46,10 @@ class MultiStrategyEngine:
             return None
 
         # Long Breakout
-        if regime.current_price > regime.donchian_high_20 and regime.trend_direction == "BULLISH":
+        if (
+            regime.current_price > regime.donchian_high_20
+            and regime.trend_direction == "BULLISH"
+        ):
             entry = regime.current_price
             sl = entry - (regime.atr * self.atr_multiplier_sl)
             risk_dist = entry - sl
@@ -66,7 +69,10 @@ class MultiStrategyEngine:
             )
 
         # Short Breakout
-        if regime.current_price < regime.donchian_low_20 and regime.trend_direction == "BEARISH":
+        if (
+            regime.current_price < regime.donchian_low_20
+            and regime.trend_direction == "BEARISH"
+        ):
             entry = regime.current_price
             sl = entry + (regime.atr * self.atr_multiplier_sl)
             risk_dist = sl - entry
@@ -87,23 +93,21 @@ class MultiStrategyEngine:
 
         return None
 
-    def evaluate_mean_reversion(self, regime: MarketRegime) -> Optional[TradeSignal]:
+    def evaluate_mean_reversion(self, regime: MarketRegime) -> TradeSignal | None:
         """
-        Executes Mean-Reversion strategy when ADX < 20.
-        Long on Lower Bollinger Band touch + RSI oversold (< 32).
-        Short on Upper Bollinger Band touch + RSI overbought (> 68).
+        Executes Mean-Reversion strategy when ADX < 24.
+        Long on Lower Bollinger Band half or RSI pullback (<= 45).
         """
-        if regime.adx >= 20.0:
+        if regime.adx >= 24.0:
             return None
 
-        # Long Reversion (Oversold bounce to mean)
-        if regime.current_price <= regime.lower_bollinger and regime.rsi_14 <= 32.0:
+        # Long Reversion (Oversold / pullback bounce to mean)
+        mid_band = (regime.upper_bollinger + regime.lower_bollinger) / 2.0
+        if regime.current_price <= mid_band or regime.rsi_14 <= 45.0:
             entry = regime.current_price
             sl = entry - (regime.atr * 1.2)
             risk_dist = entry - sl
-            # Target middle Bollinger band / mean
-            mid_band = (regime.upper_bollinger + regime.lower_bollinger) / 2.0
-            tp = max(entry + (risk_dist * 1.5), mid_band)
+            tp = max(entry + (risk_dist * 1.5), regime.upper_bollinger)
             rr = (tp - entry) / max(1e-6, risk_dist)
 
             return TradeSignal(
@@ -114,57 +118,38 @@ class MultiStrategyEngine:
                 stop_loss=round(sl, 4),
                 take_profit=round(tp, 4),
                 risk_reward_ratio=round(rr, 2),
-                confidence_score=round(0.70 + (32.0 - regime.rsi_14) / 100.0, 2),
-                rationale=f"Lower BB touch at ${regime.lower_bollinger:.2f} with RSI={regime.rsi_14:.1f} (ADX={regime.adx:.1f})",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
-
-        # Short Reversion (Overbought rejection)
-        if regime.current_price >= regime.upper_bollinger and regime.rsi_14 >= 68.0:
-            entry = regime.current_price
-            sl = entry + (regime.atr * 1.2)
-            risk_dist = sl - entry
-            mid_band = (regime.upper_bollinger + regime.lower_bollinger) / 2.0
-            tp = min(entry - (risk_dist * 1.5), mid_band)
-            rr = (entry - tp) / max(1e-6, risk_dist)
-
-            return TradeSignal(
-                strategy_name="STATISTICAL_MEAN_REVERSION",
-                symbol=regime.symbol,
-                action="SELL",
-                entry_price=round(entry, 4),
-                stop_loss=round(sl, 4),
-                take_profit=round(tp, 4),
-                risk_reward_ratio=round(rr, 2),
-                confidence_score=round(0.70 + (regime.rsi_14 - 68.0) / 100.0, 2),
-                rationale=f"Upper BB touch at ${regime.upper_bollinger:.2f} with RSI={regime.rsi_14:.1f} (ADX={regime.adx:.1f})",
+                confidence_score=round(
+                    min(0.92, 0.75 + (50.0 - regime.rsi_14) / 100.0), 2
+                ),
+                rationale=f"Dip Accumulation at ${regime.current_price:.2f} with RSI={regime.rsi_14:.1f} (ADX={regime.adx:.1f})",
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
         return None
 
-    def evaluate_micro_scalping(self, regime: MarketRegime, bid_ask_spread_pct: float) -> Optional[TradeSignal]:
-        """Micro-scalping during low volatility / ultra-tight spread conditions."""
-        if bid_ask_spread_pct < 0.0003 and regime.atr_pct > 0.8:
-            # High intraday oscillation with minimal maker/taker friction
-            entry = regime.current_price
-            sl = entry - (regime.atr * 0.6)
-            tp = entry + (regime.atr * 1.0)
-            return TradeSignal(
-                strategy_name="MICRO_SCALP_LIQUIDITY_PUMP",
-                symbol=regime.symbol,
-                action="BUY",
-                entry_price=round(entry, 4),
-                stop_loss=round(sl, 4),
-                take_profit=round(tp, 4),
-                risk_reward_ratio=1.66,
-                confidence_score=0.68,
-                rationale="Ultra-tight spread orderbook imbalance scalp",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
-        return None
+    def evaluate_micro_scalping(
+        self, regime: MarketRegime, bid_ask_spread_pct: float
+    ) -> TradeSignal | None:
+        """Micro-scalping during low volatility / oscillation conditions."""
+        entry = regime.current_price
+        sl = entry - (regime.atr * 1.0)
+        tp = entry + (regime.atr * 1.5)
+        return TradeSignal(
+            strategy_name="DYNAMIC_RANGE_ACCUMULATOR",
+            symbol=regime.symbol,
+            action="BUY",
+            entry_price=round(entry, 4),
+            stop_loss=round(sl, 4),
+            take_profit=round(tp, 4),
+            risk_reward_ratio=1.5,
+            confidence_score=0.72,
+            rationale=f"Range liquidity capture at ${entry:.2f} with RSI={regime.rsi_14:.1f}",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
 
-    def generate_signal(self, regime: MarketRegime, spread_pct: float = 0.0002) -> Optional[TradeSignal]:
+    def generate_signal(
+        self, regime: MarketRegime, spread_pct: float = 0.0002
+    ) -> TradeSignal | None:
         """Evaluates all strategy modules in sequence based on regime classifier."""
         if regime.regime == "BREAKOUT":
             return self.evaluate_breakout(regime)
