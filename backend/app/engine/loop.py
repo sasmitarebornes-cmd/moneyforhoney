@@ -20,6 +20,14 @@ from app.engine.trailing import trailing_manager
 from app.engine.vault import vault_manager
 from app.services.notifier import notifier
 
+try:
+    import ccxt.async_support as ccxt
+
+    CcxtBaseError: type[Exception] = ccxt.BaseError
+except (ImportError, ModuleNotFoundError):
+    ccxt = None  # type: ignore[assignment]
+    CcxtBaseError = RuntimeError  # type: ignore[assignment]
+
 logger = logging.getLogger("money_for_honey.engine_loop")
 
 
@@ -126,9 +134,24 @@ async def autonomous_trading_loop() -> None:
 
                     # Fetch real account equity from Binance Spot wallet (or fallback safely)
                     try:
-                        bal_data = await exchange_service.fetch_account_balance()
-                        effective_equity = float(bal_data.get("total") or 17.1165)
-                    except (RuntimeError, ValueError, OSError, KeyError):
+                        if hasattr(exchange_service, "fetch_account_balance"):
+                            bal_data = await exchange_service.fetch_account_balance()
+                        elif hasattr(exchange_service, "fetch_balance"):
+                            bal_data = await exchange_service.fetch_balance()
+                        else:
+                            bal_data = {"free": 17.1165, "total": 17.1165}
+                        effective_equity = float(
+                            bal_data.get("total") or bal_data.get("free") or 17.1165
+                        )
+                    except (
+                        RuntimeError,
+                        ValueError,
+                        OSError,
+                        KeyError,
+                        AttributeError,
+                        TypeError,
+                    ) as bal_err:
+                        logger.debug("Equity fetch fallback: %s", bal_err)
                         effective_equity = 17.1165
 
                     # Calculate dynamic position size (with $10.50 floor for small accounts)
@@ -147,7 +170,14 @@ async def autonomous_trading_loop() -> None:
                                 quantity=size_res.quantity,
                                 price=signal.entry_price,
                             )
-                        except (RuntimeError, ValueError, OSError) as ex:
+                        except (
+                            RuntimeError,
+                            ValueError,
+                            OSError,
+                            KeyError,
+                            AttributeError,
+                            CcxtBaseError,
+                        ) as ex:
                             logger.error(
                                 "Live order execution error on %s: %s",
                                 signal.symbol,
