@@ -787,17 +787,38 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
                     logger.info(
                         "📡 Broadcasting routine telemetry heartbeat to channel & operator..."
                     )
-                    await notifier.broadcast_to_community(
-                        headline="MONEY For HONEY Engine Live & Scanning",
-                        body=(
+                    if hasattr(notifier, "broadcast_to_community"):
+                        await notifier.broadcast_to_community(
+                            headline="MONEY For HONEY Engine Live & Scanning",
+                            body=(
+                                "Autonomous Quantitative Market Scanner is ACTIVE.\n"
+                                "• Regime: Multi-timeframe Breakout & Mean Reversion\n"
+                                "• Protective Stops: Active with 1.8x ATR trailing\n"
+                                "• Execution Gate: Binance Spot Live Order Routing"
+                            ),
+                            category="HEARTBEAT",
+                        )
+                    elif hasattr(notifier, "send_telegram_message"):
+                        msg = (
+                            "📡 <b>[HEARTBEAT] MONEY For HONEY Engine Live & Scanning</b>\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             "Autonomous Quantitative Market Scanner is ACTIVE.\n"
                             "• Regime: Multi-timeframe Breakout & Mean Reversion\n"
                             "• Protective Stops: Active with 1.8x ATR trailing\n"
-                            "• Execution Gate: Binance Spot Live Order Routing"
-                        ),
-                        category="HEARTBEAT",
-                    )
-            except (httpx.HTTPError, OSError, ValueError, RuntimeError) as e:
+                            "• Execution Gate: Binance Spot Live Order Routing\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            '📢 <a href="https://t.me/HoneyForHoneyOfficial">t.me/HoneyForHoneyOfficial</a>'
+                        )
+                        await notifier.send_telegram_message(
+                            msg, broadcast_to_channel=True
+                        )
+            except (
+                httpx.HTTPError,
+                OSError,
+                ValueError,
+                RuntimeError,
+                AttributeError,
+            ) as e:
                 logger.warning("Telemetry heartbeat broadcast error: %s", e)
 
             # Broadcast every 45 minutes to keep channel updated without spamming

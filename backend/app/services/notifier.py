@@ -162,6 +162,28 @@ class MultiChannelNotifier:
 
         return success
 
+    async def broadcast_to_community(
+        self,
+        headline: str,
+        body: str,
+        category: str = "COMMUNITY",
+    ) -> bool:
+        """
+        Dispatches general community announcements or routine telemetry heartbeats
+        to official Telegram channel and operator DM.
+        """
+        formatted_message = (
+            f"📡 <b>[{category}] {headline}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{body}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🤖 <b>MONEY For HONEY Autonomous Engine</b>\n"
+            '📢 <a href="https://t.me/HoneyForHoneyOfficial">t.me/HoneyForHoneyOfficial</a>'
+        )
+        return await self.send_telegram_message(
+            formatted_message, broadcast_to_channel=True
+        )
+
     async def send_whatsapp_emergency(self, alert_title: str, alert_body: str) -> bool:
         """
         Sends high-priority WhatsApp message when Circuit Breaker trips or critical API disconnects.
