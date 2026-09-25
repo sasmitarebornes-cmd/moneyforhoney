@@ -43,6 +43,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+# Silence repetitive httpx / httpcore polling logs so Market Scanner & Trade logs are crystal clear
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("money_for_honey.bot_runner")
 
 
@@ -637,14 +640,45 @@ class TelegramPollingRunner:
             markup = StandaloneKeyboards.status_menu()
 
         elif cmd == "/broadcast":
+            active_count = 0
+            if db_manager:
+                try:
+                    trades = await db_manager.get_active_trades()
+                    active_count = len(trades)
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    TypeError,
+                    AttributeError,
+                ):
+                    active_count = 0
+
+            breaker_icon = (
+                "🚨 TRIPPED (HALTED)"
+                if (risk_engine and risk_engine.circuit_breaker_active)
+                else "🟢 ACTIVE (SAFE)"
+            )
+            drawdown_str = (
+                f"{risk_engine.current_drawdown_pct * 100:.2f}%"
+                if risk_engine
+                else "0.00%"
+            )
+            summary = (
+                vault_manager.get_vault_summary()
+                if vault_manager
+                else {"total_vault_equity": 0.0, "estimated_apy_pct": 7.2}
+            )
+
             broadcast_msg = (
                 "📢 <b>MONEY For HONEY — OFFICIAL TELEMETRY UPDATE</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "⚡ <b>Engine Health:</b> 🟢 ACTIVE (SAFE)\n"
-                "📊 <b>Active Positions:</b> <code>3 Open Strategies</code>\n"
-                "📉 <b>Daily Drawdown:</b> <code>0.00%</code> (Max Risk Cap: 5.0%)\n"
-                "🏦 <b>Vault Reserves:</b> <code>$14,820.00 USDT</code>\n"
-                "📈 <b>Passive APY (Binance Earn):</b> <code>7.2%</code>\n"
+                f"⚡ <b>Engine Health:</b> {breaker_icon}\n"
+                f"📊 <b>Active Positions:</b> <code>{active_count} Open Strategies</code>\n"
+                f"📉 <b>Daily Drawdown:</b> <code>{drawdown_str}</code> (Max Risk Cap: 5.0%)\n"
+                f"🏦 <b>Vault Reserves:</b> <code>${summary['total_vault_equity']:,.2f} USDT</code>\n"
+                f"📈 <b>Passive APY (Binance Earn):</b> <code>{summary['estimated_apy_pct']}%</code>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "🐝 <i>Autonomous Quantitative Trading & Wealth Engine</i>\n"
                 f'🔗 <a href="https://t.me/{self.channel_id.replace("@", "")}">Join Official Channel</a>'
@@ -688,7 +722,14 @@ class TelegramPollingRunner:
             if exchange_service:
                 try:
                     cancelled = await exchange_service.cancel_all_open_orders()
-                except Exception as ex:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    TypeError,
+                    httpx.HTTPError,
+                ) as ex:
                     logger.warning("Order cancellation error: %s", ex)
 
             text = (
@@ -735,7 +776,14 @@ class TelegramPollingRunner:
                                     quantity=qty,
                                     order_type="market",
                                 )
-                            except Exception as ex:
+                            except (
+                                RuntimeError,
+                                ValueError,
+                                OSError,
+                                KeyError,
+                                TypeError,
+                                httpx.HTTPError,
+                            ) as ex:
                                 logger.warning("Close order error: %s", ex)
 
                         side_mult = 1.0 if side == "BUY" else -1.0
@@ -755,7 +803,14 @@ class TelegramPollingRunner:
                                 }
                             )
                         closed_count += 1
-                except Exception as err:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    TypeError,
+                    httpx.HTTPError,
+                ) as err:
                     logger.warning("Error in close_all: %s", err)
 
             text = (
@@ -776,7 +831,14 @@ class TelegramPollingRunner:
                     staked_amount = sweep_res.amount
                     prod_type = sweep_res.product_type
                     status_text = sweep_res.status
-                except Exception as ex:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    TypeError,
+                    httpx.HTTPError,
+                ) as ex:
                     logger.warning("Auto vault sweep exception: %s", ex)
 
             text = (
