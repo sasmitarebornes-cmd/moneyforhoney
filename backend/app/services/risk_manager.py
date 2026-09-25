@@ -1,7 +1,7 @@
 """
 Adaptive Risk Management Service for MONEY For HONEY.
-Dynamically scales position sizing from micro-balances ($10 - $100) up to institutional capital ($10,000+),
-enforcing Binance Spot minimum notional requirements (Min $5-$10 USDT) and strict stop-loss limits.
+Dynamically scales position sizing from micro-balances ($10 - $30) up to institutional capital ($10,000+),
+enforcing Binance Spot minimum notional requirements (Min $5-$10 USDT) and realistic volatility buffer.
 """
 
 import logging
@@ -15,10 +15,10 @@ class RiskManager:
 
     def __init__(
         self,
-        max_risk_per_trade_pct: float = 0.02,  # 2% standard risk
+        max_risk_per_trade_pct: float = 0.02,  # 2% max account risk budget
         max_daily_drawdown_pct: float = 0.05,  # 5% daily circuit breaker
-        max_open_positions: int = 3,
-        min_notional_usdt: float = 5.5,  # Binance spot minimum order threshold (~$5 USDT + safety buffer)
+        max_open_positions: int = 2,  # Maksimal 2 posisi simultan untuk modal kecil
+        min_notional_usdt: float = 10.0,  # Standar minimum order Binance Spot ($10 USDT)
     ) -> None:
         self.max_risk_per_trade_pct = max_risk_per_trade_pct
         self.max_daily_drawdown_pct = max_daily_drawdown_pct
@@ -34,9 +34,9 @@ class RiskManager:
     ) -> dict[str, Any]:
         """
         Dynamically calculates optimal order position size with micro-capital scaling:
-        - For micro balances ($10 - $30): Allocates safe single-slot trade (e.g. $10 min order).
-        - For medium balances ($30 - $100): Splits into 2-3 manageable position slots ($10 - $30 each).
-        - For large capital ($100 - $10,000+): Strictly applies Kelly/Fixed Fractional % risk per stop-loss distance.
+        - For micro balances ($10 - $30): Allocates single high-conviction order ($10 min notional).
+        - For medium balances ($30 - $100): Splits into 2 manageable position slots.
+        - For large capital ($100+): Fixed fractional sizing with strict SL risk caps.
         """
         if total_balance_usdt <= 0 or entry_price <= 0:
             return {
@@ -55,28 +55,26 @@ class RiskManager:
                 "notional_usdt": 0.0,
             }
 
-        # Calculate distance to Stop Loss
-        sl_distance_pct = (
+        # Calculate distance to Stop Loss dengan batas aman realistis (minimal 1.2%)
+        raw_dist_pct = (
             abs(entry_price - stop_loss_price) / entry_price
             if stop_loss_price > 0
-            else 0.02
+            else 0.015
         )
-        if sl_distance_pct < 0.005:  # Minimum 0.5% SL distance for sanity
-            sl_distance_pct = 0.02
+        sl_distance_pct = max(raw_dist_pct, 0.012)
 
         # -----------------------------------------------------------------
-        # TIER 1: Micro Balance ($10.00 - $30.00 USDT)
+        # TIER 1: Micro Balance ($10.00 - $30.00 USDT - Saldo $17.12 Masuk Sini)
         # -----------------------------------------------------------------
         if total_balance_usdt < 30.0:
-            # Allocate 1 full valid trade slot ($10.00 - $12.00 USDT) with tight stop-loss
-            order_notional = min(total_balance_usdt * 0.95, 12.0)
-            if order_notional < self.min_notional_usdt:
-                order_notional = total_balance_usdt * 0.98
+            # Alokasi 1 posisi presisi ($10.00 - $11.00 USDT)
+            order_notional = min(total_balance_usdt * 0.95, 11.0)
+            order_notional = max(order_notional, self.min_notional_usdt)
 
-            if order_notional < self.min_notional_usdt:
+            if total_balance_usdt < (self.min_notional_usdt * 0.95):
                 return {
                     "allowed": False,
-                    "reason": f"Balance (${total_balance_usdt:.2f}) below Binance minimum order requirement (${self.min_notional_usdt} USDT)",
+                    "reason": f"Balance (${total_balance_usdt:.2f}) below Binance minimum requirement (${self.min_notional_usdt} USDT)",
                     "quantity": 0.0,
                     "notional_usdt": 0.0,
                 }
@@ -88,7 +86,7 @@ class RiskManager:
                 "allowed": True,
                 "tier": "MICRO_CAPITAL",
                 "notional_usdt": round(order_notional, 2),
-                "quantity": quantity,
+                "quantity": float(f"{quantity:.6f}"),
                 "risk_amount_usdt": round(est_risk_usd, 2),
                 "risk_pct_of_account": round(
                     (est_risk_usd / total_balance_usdt) * 100, 2
@@ -111,7 +109,7 @@ class RiskManager:
                 "allowed": True,
                 "tier": "SMALL_CAPITAL",
                 "notional_usdt": round(order_notional, 2),
-                "quantity": quantity,
+                "quantity": float(f"{quantity:.6f}"),
                 "risk_amount_usdt": round(est_risk_usd, 2),
                 "risk_pct_of_account": round(
                     (est_risk_usd / total_balance_usdt) * 100, 2
@@ -120,13 +118,12 @@ class RiskManager:
             }
 
         # -----------------------------------------------------------------
-        # TIER 3: Standard & Growth Capital ($100.00 - $10,000.00+ USDT)
+        # TIER 3: Standard Capital ($100.00+ USDT)
         # -----------------------------------------------------------------
         else:
             risk_usd_target = total_balance_usdt * self.max_risk_per_trade_pct
             calculated_notional = risk_usd_target / sl_distance_pct
-
-            max_position_cap = total_balance_usdt * 0.33
+            max_position_cap = total_balance_usdt * 0.30
             order_notional = max(
                 self.min_notional_usdt, min(calculated_notional, max_position_cap)
             )
@@ -137,7 +134,7 @@ class RiskManager:
                 "allowed": True,
                 "tier": "STANDARD_CAPITAL",
                 "notional_usdt": round(order_notional, 2),
-                "quantity": quantity,
+                "quantity": float(f"{quantity:.6f}"),
                 "risk_amount_usdt": round(actual_risk_usd, 2),
                 "risk_pct_of_account": round(
                     (actual_risk_usd / total_balance_usdt) * 100, 2
