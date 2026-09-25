@@ -225,36 +225,190 @@ async def autonomous_trading_loop() -> None:
                             risk_usdt=size_res.risk_amount,
                         )
 
-            # 3. Dynamic Trailing Stop & Break-Even Evaluation
+            # 3. Dynamic Take-Profit, Stop-Loss & Trailing Stop Evaluation
             for trade in active_trades:
-                current_price = trade.get("mark_price", trade["entry_price"])
-                high_price = trade.get(
-                    "highest_price", max(trade["entry_price"], current_price)
-                )
-                low_price = trade.get(
-                    "lowest_price", min(trade["entry_price"], current_price)
-                )
+                if trade.get("symbol") == regime.symbol:
+                    current_price = regime.current_price
+                else:
+                    ticker = await exchange_service.fetch_ticker(trade.get("symbol"))
+                    current_price = float(
+                        ticker.get("last")
+                        or trade.get("mark_price", trade["entry_price"])
+                    )
+
+                side = trade.get("side", "BUY").upper()
+                tp_price = float(trade.get("take_profit") or 0.0)
+                sl_price = float(trade.get("stop_loss") or 0.0)
+                entry_p = float(trade["entry_price"])
+                qty = float(trade["quantity"])
+
+                # Check Take Profit condition
+                is_tp_hit = False
+                if tp_price > 0:
+                    if (
+                        side == "BUY"
+                        and current_price >= tp_price
+                        or side == "SELL"
+                        and current_price <= tp_price
+                    ):
+                        is_tp_hit = True
+
+                # Check Stop Loss condition
+                is_sl_hit = False
+                if sl_price > 0:
+                    if (
+                        side == "BUY"
+                        and current_price <= sl_price
+                        or side == "SELL"
+                        and current_price >= sl_price
+                    ):
+                        is_sl_hit = True
+
+                if is_tp_hit:
+                    side_mult = 1.0 if side == "BUY" else -1.0
+                    realized_pnl = round((current_price - entry_p) * side_mult * qty, 2)
+                    close_side = "SELL" if side == "BUY" else "BUY"
+
+                    logger.info(
+                        "🎯 [TAKE PROFIT TRIGGERED] %s (ID: %s) reached $%.2f (Target: $%.2f) | PnL: +$%.2f USDT",
+                        trade["symbol"],
+                        trade["id"],
+                        current_price,
+                        tp_price,
+                        realized_pnl,
+                    )
+
+                    try:
+                        await exchange_service.execute_order(
+                            symbol=trade["symbol"],
+                            side=close_side,
+                            quantity=qty,
+                            order_type="market",
+                        )
+                    except (
+                        RuntimeError,
+                        ValueError,
+                        OSError,
+                        KeyError,
+                        AttributeError,
+                        CcxtBaseError,
+                    ) as ex:
+                        logger.warning("Exchange close order notification: %s", ex)
+
+                    await db_manager.close_trade(
+                        trade_id=trade["id"],
+                        exit_price=current_price,
+                        realized_pnl=realized_pnl,
+                    )
+
+                    if realized_pnl > 0:
+                        waterfall_res = vault_manager.distribute_trade_profit(
+                            realized_pnl
+                        )
+                        await db_manager.record_vault_distribution(
+                            {
+                                "gross_profit": waterfall_res.gross_profit,
+                                "maintenance_fee": waterfall_res.maintenance_fee,
+                                "reinvest_amount": waterfall_res.reinvest_amount,
+                                "vault_allocation": waterfall_res.vault_allocation,
+                                "total_vault_reserve": waterfall_res.total_accumulated_vault,
+                            }
+                        )
+                        logger.info(
+                            "🍯 [PROFIT WATERFALL HARVESTED] Gross: +$%.2f | Reinvest: +$%.2f | Vault Staked: +$%.2f | Total Vault: $%.2f",
+                            waterfall_res.gross_profit,
+                            waterfall_res.reinvest_amount,
+                            waterfall_res.vault_allocation,
+                            waterfall_res.total_accumulated_vault,
+                        )
+                        await notifier.notify_profit_harvest(
+                            gross_profit=waterfall_res.gross_profit,
+                            maintenance_fee=waterfall_res.maintenance_fee,
+                            reinvest_equity=waterfall_res.reinvest_amount,
+                            vault_deposit=waterfall_res.vault_allocation,
+                            total_vault_balance=waterfall_res.total_accumulated_vault,
+                            symbol=trade["symbol"],
+                            exit_price=current_price,
+                        )
+                    continue
+
+                if is_sl_hit:
+                    side_mult = 1.0 if side == "BUY" else -1.0
+                    realized_pnl = round((current_price - entry_p) * side_mult * qty, 2)
+                    close_side = "SELL" if side == "BUY" else "BUY"
+
+                    logger.warning(
+                        "🛡️ [STOP LOSS TRIGGERED] %s (ID: %s) hit SL at $%.2f (Level: $%.2f) | PnL: $%.2f USDT",
+                        trade["symbol"],
+                        trade["id"],
+                        current_price,
+                        sl_price,
+                        realized_pnl,
+                    )
+
+                    try:
+                        await exchange_service.execute_order(
+                            symbol=trade["symbol"],
+                            side=close_side,
+                            quantity=qty,
+                            order_type="market",
+                        )
+                    except (
+                        RuntimeError,
+                        ValueError,
+                        OSError,
+                        KeyError,
+                        AttributeError,
+                        CcxtBaseError,
+                    ) as ex:
+                        logger.warning("Exchange stop order notification: %s", ex)
+
+                    await db_manager.close_trade(
+                        trade_id=trade["id"],
+                        exit_price=current_price,
+                        realized_pnl=realized_pnl,
+                    )
+
+                    await notifier.notify_stop_loss(
+                        symbol=trade["symbol"],
+                        side=side,
+                        entry_price=entry_p,
+                        exit_price=current_price,
+                        quantity=qty,
+                        realized_pnl=realized_pnl,
+                        reason=f"Price reached protective Stop Loss at ${sl_price:,.2f}",
+                    )
+                    continue
+
+                # Trailing Stop & Break-Even Evaluation
+                high_price = trade.get("highest_price", max(entry_p, current_price))
+                low_price = trade.get("lowest_price", min(entry_p, current_price))
                 trailing_res = trailing_manager.evaluate_position_trailing(
                     trade_id=trade["id"],
                     symbol=trade["symbol"],
-                    side=trade["side"],
-                    entry_price=trade["entry_price"],
-                    initial_sl=trade["stop_loss"],
-                    current_sl=trade["stop_loss"],
+                    side=side,
+                    entry_price=entry_p,
+                    initial_sl=sl_price,
+                    current_sl=sl_price,
                     current_price=current_price,
                     highest_price=high_price,
                     lowest_price=low_price,
-                    atr=trade["entry_price"] * 0.015,
+                    atr=entry_p * 0.015,
                 )
                 if (
                     trailing_res.is_breakeven_activated
                     or trailing_res.is_trailing_stepped
                 ):
-                    logger.info(
-                        "Trailing Stop Adjusted for %s: %s",
-                        trade["id"],
-                        trailing_res.message,
-                    )
+                    if trailing_res.new_sl != sl_price:
+                        await db_manager.update_trade_sl(
+                            trade["id"], trailing_res.new_sl
+                        )
+                        trade["stop_loss"] = trailing_res.new_sl
+                        logger.info(
+                            "⚡ [TRAILING STOP ADJUSTED] %s: %s",
+                            trade["id"],
+                            trailing_res.message,
+                        )
 
             # 4. Spatial Arbitrage Cross-Exchange Scan
             quotes = await arbitrage_scanner.fetch_live_quotes("ETH/USDT")
@@ -284,7 +438,9 @@ async def autonomous_trading_loop() -> None:
 
             # 6. Vault Auto-Sweep Check
             if vault_manager.total_vault_reserve >= 10.0:
-                sweep = await vault_manager.execute_auto_vault_sweep()
+                sweep = await vault_manager.execute_auto_vault_sweep(
+                    binance_client=getattr(exchange_service, "binance", None)
+                )
                 if sweep.status == "SUCCESS":
                     await notifier.notify_vault_staked(
                         product_type=sweep.product_type,

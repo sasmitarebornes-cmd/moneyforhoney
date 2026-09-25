@@ -13,11 +13,13 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("money_for_honey.database")
 
-DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "trading_data.db")
+DB_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "trading_data.db"
+)
 
 
 class DatabaseManager:
@@ -63,8 +65,12 @@ class DatabaseManager:
                         closed_at TEXT
                     )
                 """)
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at);")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at);"
+                )
 
                 # 2. Vault Ledger table
                 cursor.execute("""
@@ -95,15 +101,17 @@ class DatabaseManager:
                 """)
                 conn.commit()
                 logger.info(f"Persistent database initialized at {self.db_path}")
-        except Exception as e:
-            logger.error(f"Failed to initialize SQLite database: {e}", exc_info=True)
+        except (sqlite3.Error, OSError) as e:
+            logger.exception("Failed to initialize SQLite database: %s", e)
 
-    async def save_trade(self, trade_data: Dict[str, Any]) -> bool:
+    async def save_trade(self, trade_data: dict[str, Any]) -> bool:
         """Inserts or updates a trade record."""
+
         def _execute():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO trades (
                         id, symbol, strategy, side, entry_price, mark_price,
                         stop_loss, take_profit, quantity, notional_usdt,
@@ -112,40 +120,49 @@ class DatabaseManager:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         mark_price=excluded.mark_price,
+                        stop_loss=excluded.stop_loss,
+                        take_profit=excluded.take_profit,
                         realized_pnl_usdt=excluded.realized_pnl_usdt,
                         status=excluded.status,
                         duration=excluded.duration,
                         closed_at=excluded.closed_at
-                """, (
-                    trade_data["id"],
-                    trade_data["symbol"],
-                    trade_data.get("strategy", "ALGO_MANUAL"),
-                    trade_data["side"],
-                    float(trade_data["entry_price"]),
-                    float(trade_data.get("mark_price", trade_data["entry_price"])),
-                    float(trade_data["stop_loss"]),
-                    float(trade_data["take_profit"]),
-                    float(trade_data["quantity"]),
-                    float(trade_data["notional_usdt"]),
-                    float(trade_data.get("allocated_risk_usdt", 0.0)),
-                    float(trade_data.get("realized_pnl_usdt", 0.0)),
-                    trade_data.get("status", "OPEN"),
-                    trade_data.get("duration", "1m"),
-                    json.dumps(trade_data.get("details", {})),
-                    trade_data.get("created_at", datetime.now(timezone.utc).isoformat()),
-                    trade_data.get("closed_at"),
-                ))
+                """,
+                    (
+                        trade_data["id"],
+                        trade_data["symbol"],
+                        trade_data.get("strategy", "ALGO_MANUAL"),
+                        trade_data["side"],
+                        float(trade_data["entry_price"]),
+                        float(trade_data.get("mark_price", trade_data["entry_price"])),
+                        float(trade_data["stop_loss"]),
+                        float(trade_data["take_profit"]),
+                        float(trade_data["quantity"]),
+                        float(trade_data["notional_usdt"]),
+                        float(trade_data.get("allocated_risk_usdt", 0.0)),
+                        float(trade_data.get("realized_pnl_usdt", 0.0)),
+                        trade_data.get("status", "OPEN"),
+                        trade_data.get("duration", "1m"),
+                        json.dumps(trade_data.get("details", {})),
+                        trade_data.get(
+                            "created_at", datetime.now(timezone.utc).isoformat()
+                        ),
+                        trade_data.get("closed_at"),
+                    ),
+                )
                 conn.commit()
                 return True
 
         return await asyncio.to_thread(_execute)
 
-    async def get_active_trades(self) -> List[Dict[str, Any]]:
+    async def get_active_trades(self) -> list[dict[str, Any]]:
         """Retrieves all currently open positions."""
+
         def _query():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM trades WHERE status = 'OPEN' ORDER BY created_at DESC")
+                cursor.execute(
+                    "SELECT * FROM trades WHERE status = 'OPEN' ORDER BY created_at DESC"
+                )
                 rows = cursor.fetchall()
                 results = []
                 for row in rows:
@@ -153,15 +170,56 @@ class DatabaseManager:
                     if item.get("details"):
                         try:
                             item["details"] = json.loads(item["details"])
-                        except Exception:
+                        except (json.JSONDecodeError, TypeError):
                             pass
                     results.append(item)
                 return results
 
         return await asyncio.to_thread(_query)
 
-    async def close_trade(self, trade_id: str, exit_price: float, realized_pnl: float) -> Optional[Dict[str, Any]]:
+    async def get_closed_trades(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Retrieves recently closed positions with realized PnL and exit prices."""
+
+        def _query():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM trades WHERE status = 'CLOSED' ORDER BY COALESCE(closed_at, created_at) DESC LIMIT ?",
+                    (limit,),
+                )
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    item = dict(row)
+                    if item.get("details"):
+                        try:
+                            item["details"] = json.loads(item["details"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    results.append(item)
+                return results
+
+        return await asyncio.to_thread(_query)
+
+    async def update_trade_sl(self, trade_id: str, new_sl: float) -> bool:
+        """Updates stop loss price level for an open trade."""
+
+        def _execute():
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE trades SET stop_loss = ? WHERE id = ?", (new_sl, trade_id)
+                )
+                conn.commit()
+                return True
+
+        return await asyncio.to_thread(_execute)
+
+    async def close_trade(
+        self, trade_id: str, exit_price: float, realized_pnl: float
+    ) -> dict[str, Any] | None:
         """Closes an active trade, updates realized PnL, and returns the updated record."""
+
         def _close():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -169,16 +227,19 @@ class DatabaseManager:
                 row = cursor.fetchone()
                 if not row:
                     return None
-                
+
                 now_str = datetime.now(timezone.utc).isoformat()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     UPDATE trades SET
                         status = 'CLOSED',
                         mark_price = ?,
                         realized_pnl_usdt = ?,
                         closed_at = ?
                     WHERE id = ?
-                """, (exit_price, realized_pnl, now_str, trade_id))
+                """,
+                    (exit_price, realized_pnl, now_str, trade_id),
+                )
                 conn.commit()
 
                 cursor.execute("SELECT * FROM trades WHERE id = ?", (trade_id,))
@@ -187,36 +248,45 @@ class DatabaseManager:
 
         return await asyncio.to_thread(_close)
 
-    async def record_vault_distribution(self, record: Dict[str, Any]) -> bool:
+    async def record_vault_distribution(self, record: dict[str, Any]) -> bool:
         """Records profit waterfall distribution to persistent ledger."""
+
         def _execute():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO vault_ledger (
                         gross_profit, maintenance_fee, reinvest_amount,
                         vault_allocation, total_vault_reserve, product_type, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    record["gross_profit"],
-                    record["maintenance_fee"],
-                    record["reinvest_amount"],
-                    record["vault_allocation"],
-                    record["total_vault_reserve"],
-                    record.get("product_type", "NONE"),
-                    record.get("created_at", datetime.now(timezone.utc).isoformat()),
-                ))
+                """,
+                    (
+                        record["gross_profit"],
+                        record["maintenance_fee"],
+                        record["reinvest_amount"],
+                        record["vault_allocation"],
+                        record["total_vault_reserve"],
+                        record.get("product_type", "NONE"),
+                        record.get(
+                            "created_at", datetime.now(timezone.utc).isoformat()
+                        ),
+                    ),
+                )
                 conn.commit()
                 return True
 
         return await asyncio.to_thread(_execute)
 
-    async def get_latest_equity_snapshot(self) -> Optional[Dict[str, Any]]:
+    async def get_latest_equity_snapshot(self) -> dict[str, Any] | None:
         """Recovers daily peak and starting equity across restarts."""
+
         def _query():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM equity_snapshots ORDER BY id DESC LIMIT 1")
+                cursor.execute(
+                    "SELECT * FROM equity_snapshots ORDER BY id DESC LIMIT 1"
+                )
                 row = cursor.fetchone()
                 return dict(row) if row else None
 
@@ -228,15 +298,17 @@ class DatabaseManager:
         peak_equity: float,
         current_drawdown_pct: float,
         circuit_breaker_active: bool,
-        trip_reason: Optional[str] = None,
+        trip_reason: str | None = None,
     ) -> bool:
         """Persists latest daily equity and circuit breaker state."""
+
         def _update():
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             now_str = datetime.now(timezone.utc).isoformat()
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO equity_snapshots (
                         snapshot_date, starting_equity, peak_equity,
                         current_drawdown_pct, circuit_breaker_active, trip_reason, updated_at
@@ -248,15 +320,17 @@ class DatabaseManager:
                         circuit_breaker_active = excluded.circuit_breaker_active,
                         trip_reason = excluded.trip_reason,
                         updated_at = excluded.updated_at
-                """, (
-                    today_str,
-                    starting_equity,
-                    peak_equity,
-                    current_drawdown_pct,
-                    1 if circuit_breaker_active else 0,
-                    trip_reason,
-                    now_str,
-                ))
+                """,
+                    (
+                        today_str,
+                        starting_equity,
+                        peak_equity,
+                        current_drawdown_pct,
+                        1 if circuit_breaker_active else 0,
+                        trip_reason,
+                        now_str,
+                    ),
+                )
                 conn.commit()
                 return True
 

@@ -2,17 +2,20 @@
 FastAPI Dashboard & Quantitative Control Router.
 Exposes REST endpoints consumed by the frontend and external webhooks:
 - Real-time PnL & telemetry
-- Active Trades and live order execution
+- Active Trades, Closed Trades, Trade History and live order execution
 - Vault staking & auto-compound ledger
 - Live Spatial Arbitrage signals (Binance vs Bybit vs OKX)
 - Circuit Breaker emergency switch with automated order cancellation
 - Market Regime Scanner with technical indicators (ATR, ADX, RSI, BB, Donchian)
 """
 
+from __future__ import annotations
+
+import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -28,10 +31,14 @@ from app.engine.vault import vault_manager
 from app.services.notifier import notifier
 from app.services.telegram_bot import chatops_bot
 
+logger = logging.getLogger("money_for_honey.api")
+
 router = APIRouter(prefix="/api", tags=["Trading Engine"])
 
 
+# ==========================================
 # Request / Response Schemas
+# ==========================================
 class CircuitBreakerToggleRequest(BaseModel):
     active: bool | None = None
     reason: str | None = "Operator Dashboard Trigger"
@@ -61,7 +68,7 @@ class CloseTradeRequest(BaseModel):
 
 
 class ProfitHarvestRequest(BaseModel):
-    gross_profit: float = Field(..., gt=0)
+    gross_profit: float = Field(default=10.0, gt=0)
 
 
 class DeployFundingRequest(BaseModel):
@@ -83,8 +90,11 @@ class BacktestRequest(BaseModel):
     risk_per_trade_pct: float = 0.015
 
 
+# ==========================================
+# Telemetry & Health Endpoints
+# ==========================================
 @router.get("/health")
-async def health_check():
+async def health_check() -> dict[str, Any]:
     return {
         "status": "HEALTHY",
         "system": "MONEY For HONEY",
@@ -95,7 +105,7 @@ async def health_check():
 
 
 @router.get("/engine/status")
-async def get_engine_status():
+async def get_engine_status() -> dict[str, Any]:
     """Returns top-level telemetry for the dashboard header."""
     return {
         "circuit_breaker_active": risk_engine.circuit_breaker_active,
@@ -115,14 +125,15 @@ async def get_engine_status():
 
 
 @router.post("/engine/circuit-breaker/toggle")
-async def toggle_circuit_breaker(payload: CircuitBreakerToggleRequest):
+async def toggle_circuit_breaker(
+    payload: CircuitBreakerToggleRequest,
+) -> dict[str, Any]:
     """Emergency toggle to manually trip or reset the circuit breaker."""
     new_state = risk_engine.toggle_manual_circuit_breaker(
         activate=payload.active,
         reason=payload.reason or "Manual Admin Toggle",
     )
     if new_state:
-        # Cancel all open orders immediately upon emergency trip
         cancelled = await exchange_service.cancel_all_open_orders()
         await notifier.notify_circuit_breaker(
             f"{payload.reason or 'Manual Emergency Trip'} (Cancelled {cancelled} open orders)",
@@ -148,22 +159,43 @@ async def toggle_circuit_breaker(payload: CircuitBreakerToggleRequest):
     }
 
 
+# ==========================================
+# Trade Operations & Persistence Endpoints
+# ==========================================
 @router.get("/trades/active")
-async def get_active_trades():
+async def get_active_trades() -> list[dict[str, Any]]:
     """Returns currently open high-conviction positions from persistent storage."""
     db_trades = await db_manager.get_active_trades()
     return db_trades if db_trades is not None else []
 
 
+@router.get("/trades/closed")
+async def get_closed_trades(
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[dict[str, Any]]:
+    """Returns recently closed positions and take profit history."""
+    closed = await db_manager.get_closed_trades(limit=limit)
+    return closed if closed is not None else []
+
+
+@router.get("/trades/history")
+async def get_trades_history(
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    """Returns historical trade log with realized PnL, exit prices, and timestamps."""
+    closed = await db_manager.get_closed_trades(limit=limit)
+    return closed if closed is not None else []
+
+
 @router.post("/trades/execute")
-async def execute_trade(payload: ExecuteOrderRequest):
+async def execute_trade(payload: ExecuteOrderRequest) -> dict[str, Any]:
     """
     Submits, validates, routes, and records a quantitative order.
     1. Validates risk & position size (1.5% max risk, 30% max allocation, Binance $10 min).
     2. Routes via TWAP slicing if notional > threshold or direct with slippage guard.
     3. Executes on exchange (or sandbox).
     4. Persists trade into database.
-    5. Sends multi-channel alert (WhatsApp + Telegram).
+    5. Sends multi-channel alert (Telegram).
     """
     # 1. Risk calculation
     size_res = risk_engine.calculate_position_size(
@@ -192,7 +224,7 @@ async def execute_trade(payload: ExecuteOrderRequest):
     )
 
     trade_id = f"TRD-{int(time.time() * 1000) % 1000000}"
-    trade_record = {
+    trade_record: dict[str, Any] = {
         "id": trade_id,
         "symbol": payload.symbol,
         "strategy": payload.strategy or "DYNAMIC_BREAKOUT_MOMENTUM",
@@ -245,7 +277,7 @@ async def execute_trade(payload: ExecuteOrderRequest):
 
 
 @router.post("/trades/close")
-async def close_trade(payload: CloseTradeRequest):
+async def close_trade(payload: CloseTradeRequest) -> dict[str, Any]:
     """
     Closes an active position:
     1. Updates trade status to CLOSED.
@@ -260,7 +292,6 @@ async def close_trade(payload: CloseTradeRequest):
     target_trade = next((t for t in active_trades if t["id"] == payload.trade_id), None)
 
     if not target_trade:
-        # Check if it was one of the default seed trades
         default_seed_ids = ["TRD-88219", "TRD-88220", "TRD-88221"]
         if payload.trade_id in default_seed_ids:
             entry_price = (
@@ -294,7 +325,6 @@ async def close_trade(payload: CloseTradeRequest):
                 status_code=404, detail="Trade not found or already closed."
             )
 
-    # Calculate realized PnL
     side_mult = 1.0 if target_trade["side"] == "BUY" else -1.0
     price_diff = (payload.exit_price - target_trade["entry_price"]) * side_mult
     realized_pnl = round(price_diff * target_trade["quantity"], 2)
@@ -330,12 +360,17 @@ async def close_trade(payload: CloseTradeRequest):
         "trade_id": payload.trade_id,
         "exit_price": payload.exit_price,
         "realized_pnl_usdt": realized_pnl,
-        "waterfall": waterfall_res,
+        "waterfall": waterfall_res.__dict__
+        if hasattr(waterfall_res, "__dict__")
+        else waterfall_res,
     }
 
 
+# ==========================================
+# Arbitrage & Vault Endpoints
+# ==========================================
 @router.get("/arbitrage/signals")
-async def get_arbitrage_signals():
+async def get_arbitrage_signals() -> list[dict[str, Any]]:
     """Returns spatial arbitrage matrix across Binance, Bybit, and OKX."""
     mock_matrix = [
         {
@@ -395,7 +430,7 @@ async def get_arbitrage_signals():
 
 
 @router.get("/vault/status")
-async def get_vault_status():
+async def get_vault_status() -> dict[str, Any]:
     """Returns Binance Simple Earn Auto-Vault status and compound ledger."""
     summary = vault_manager.get_vault_summary()
     if summary["total_vault_equity"] == 0:
@@ -440,7 +475,7 @@ async def get_vault_status():
 
 
 @router.post("/vault/distribute-profit")
-async def distribute_profit(payload: ProfitHarvestRequest):
+async def distribute_profit(payload: ProfitHarvestRequest) -> dict[str, Any]:
     """Triggers the 5% fee / 70% reinvest / 30% vault allocation waterfall."""
     res = vault_manager.distribute_trade_profit(payload.gross_profit)
     await db_manager.record_vault_distribution(
@@ -470,13 +505,15 @@ async def distribute_profit(payload: ProfitHarvestRequest):
         )
 
     return {
-        "waterfall": res,
-        "sweep_result": sweep_res,
+        "waterfall": res.__dict__ if hasattr(res, "__dict__") else res,
+        "sweep_result": sweep_res.__dict__
+        if hasattr(sweep_res, "__dict__")
+        else sweep_res,
     }
 
 
 @router.post("/trades/calculate-risk")
-async def calculate_risk_preview(payload: ManualTradeRequest):
+async def calculate_risk_preview(payload: ManualTradeRequest) -> dict[str, Any]:
     """Calculates position size and enforces 1.5% risk & circuit breaker."""
     result = risk_engine.calculate_position_size(
         equity=payload.account_equity,
@@ -484,14 +521,14 @@ async def calculate_risk_preview(payload: ManualTradeRequest):
         stop_loss=payload.stop_loss,
         symbol=payload.symbol,
     )
-    return result
+    return result.__dict__ if hasattr(result, "__dict__") else result
 
 
 @router.get("/market/ticker")
-async def get_market_tickers():
+async def get_market_tickers() -> dict[str, Any]:
     """Fetches real-time price feeds for active assets."""
     symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "DOGE/USDT", "AVAX/USDT"]
-    results = {}
+    results: dict[str, Any] = {}
     for s in symbols:
         t = await exchange_service.fetch_ticker(s)
         results[s] = t
@@ -502,10 +539,10 @@ async def get_market_tickers():
 # 1. Dynamic Trailing Stop & Break-Even API
 # ==========================================
 @router.get("/trades/trailing/evaluate")
-async def evaluate_trailing_stops():
+async def evaluate_trailing_stops() -> list[dict[str, Any]]:
     """Evaluates and ratchets trailing stop levels for all active positions."""
     active_trades = await db_manager.get_active_trades()
-    evaluations = []
+    evaluations: list[dict[str, Any]] = []
     for trade in active_trades:
         current_price = trade.get("mark_price", trade["entry_price"])
         high_price = trade.get(
@@ -543,21 +580,20 @@ async def evaluate_trailing_stops():
 # 2. Multi-Timeframe Confluence Filter API
 # ==========================================
 @router.get("/confluence/status")
-async def get_confluence_status():
+async def get_confluence_status() -> list[dict[str, Any]]:
     """Returns macro 4H/1D trend alignment scores for top liquid assets."""
     symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
-    results = []
+    results: list[dict[str, Any]] = []
     for sym in symbols:
         ticker = await exchange_service.fetch_ticker(sym)
         price = ticker.get(
             "last", 92000.0 if "BTC" in sym else (3450.0 if "ETH" in sym else 215.0)
         )
-        # Evaluate long & short alignment
         eval_long = confluence_engine.evaluate_macro_confluence(
             symbol=sym,
             proposed_action="BUY",
             current_price=price,
-            macro_ohlcv=[],  # uses realistic mathematical model
+            macro_ohlcv=[],
         )
         results.append(
             {
@@ -579,11 +615,11 @@ async def get_confluence_status():
 # 3. Delta-Neutral Cash-and-Carry Funding Arbitrage API
 # ====================================================
 @router.get("/funding/opportunities")
-async def get_funding_opportunities():
+async def get_funding_opportunities() -> dict[str, Any]:
     """Scans perpetual funding rates and returns market-neutral APR yields."""
     opps = funding_engine.scan_funding_rates()
     return {
-        "opportunities": [o.__dict__ for o in opps],
+        "opportunities": [o.__dict__ if hasattr(o, "__dict__") else o for o in opps],
         "active_delta_neutral_positions": funding_engine.active_delta_neutral_positions,
         "average_annual_apr_pct": round(
             sum(o.annualized_apr_pct for o in opps) / max(1, len(opps)), 2
@@ -592,7 +628,7 @@ async def get_funding_opportunities():
 
 
 @router.post("/funding/deploy")
-async def deploy_funding_arbitrage(payload: DeployFundingRequest):
+async def deploy_funding_arbitrage(payload: DeployFundingRequest) -> dict[str, Any]:
     """
     Deploys a Delta-Neutral cash & carry position (Long Spot + Short 1x Perp)
     with atomic two-leg execution and instant rollback protection against leg risk.
@@ -600,7 +636,6 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest):
     half_cap = payload.capital_usdt / 2.0
     qty = round(half_cap / max(payload.spot_price, 0.0001), 6)
 
-    # 1. Execute Atomic Two-Leg Execution on exchange service (or simulation if keys not live)
     try:
         execution_res = await exchange_service.execute_two_leg_delta_neutral(
             symbol=payload.symbol,
@@ -615,7 +650,6 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest):
             detail=f"Atomic Delta-Neutral execution aborted: {exec_err}",
         ) from exec_err
 
-    # 2. Record hedged position in engine
     pos = funding_engine.create_delta_neutral_position(
         symbol=payload.symbol,
         capital_usdt=payload.capital_usdt,
@@ -624,7 +658,7 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest):
     )
     return {
         "status": "SUCCESS",
-        "position": pos,
+        "position": pos.__dict__ if hasattr(pos, "__dict__") else pos,
         "execution": execution_res,
         "message": f"Successfully opened {payload.symbol} Delta-Neutral hedge with ${payload.capital_usdt:,.2f} capital (Atomic 2-Leg Verified).",
     }
@@ -634,7 +668,7 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest):
 # 4. Interactive Telegram ChatOps Remote API
 # ==========================================
 @router.post("/telegram/test-command")
-async def test_telegram_chatops(payload: TelegramCommandRequest):
+async def test_telegram_chatops(payload: TelegramCommandRequest) -> dict[str, Any]:
     """Directly invokes a ChatOps command from the dashboard UI."""
     response_text = await chatops_bot.process_command(
         command_text=payload.command,
@@ -651,9 +685,9 @@ async def test_telegram_chatops(payload: TelegramCommandRequest):
 async def telegram_webhook(
     update: dict[str, Any],
     x_telegram_bot_api_secret_token: str | None = Header(
-        None, alias="X-Telegram-Bot-Api-Secret-Token"
+        default=None, alias="X-Telegram-Bot-Api-Secret-Token"
     ),
-):
+) -> dict[str, bool]:
     """
     Receives webhook updates securely from Telegram Bot API.
     Validates X-Telegram-Bot-Api-Secret-Token to prevent spoofed unauthorized calls.
@@ -683,7 +717,7 @@ async def telegram_webhook(
 # 4.5 Production Pre-Flight Verification & Audit Endpoint
 # =======================================================
 @router.get("/system/preflight")
-async def get_system_preflight_audit():
+async def get_system_preflight_audit() -> dict[str, Any]:
     """
     Runs full pre-flight audit: exchange connectivity, API key validity,
     trading permissions, latency, database health, and circuit breaker status.
@@ -698,7 +732,7 @@ async def get_system_preflight_audit():
 # 5. Historical Backtesting & Monte Carlo Simulation API
 # =====================================================
 @router.post("/backtest/run")
-async def run_quantitative_backtest(payload: BacktestRequest):
+async def run_quantitative_backtest(payload: BacktestRequest) -> dict[str, Any]:
     """
     Executes backtest and 500-iteration Monte Carlo simulation for selected strategy.
     Returns Sharpe, Sortino, Profit Factor, MDD %, and 95% Confidence Intervals.

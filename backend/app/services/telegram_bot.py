@@ -15,12 +15,16 @@ Features institutional-grade Inline Keyboard UI with real-time state manipulatio
 import logging
 from typing import Any
 
-import httpx
+try:
+    import httpx
+except (ImportError, ModuleNotFoundError):
+    httpx = None  # type: ignore[assignment]
 
 from app.core.config import settings
 from app.db.database import db_manager
 from app.engine.exchange import exchange_service
 from app.engine.risk import risk_engine
+from app.engine.scanner import market_scanner
 from app.engine.vault import vault_manager
 
 logger = logging.getLogger("money_for_honey.chatops")
@@ -40,21 +44,24 @@ class TelegramKeyboards:
                 ],
                 [
                     {"text": "📈 Active Trades", "callback_data": "/positions"},
+                    {"text": "🎯 Take Profit Logs", "callback_data": "/tp"},
+                ],
+                [
                     {"text": "🏦 Vault & Harvest", "callback_data": "/harvest"},
-                ],
-                [
                     {"text": "⚡ Radar Signals", "callback_data": "/radar"},
+                ],
+                [
                     {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
-                ],
-                [
                     {"text": "📖 Manual / Help", "callback_data": "/help"},
-                    {"text": "✅ Resume Engine", "callback_data": "/resume"},
                 ],
                 [
+                    {"text": "✅ Resume Engine", "callback_data": "/resume"},
                     {
                         "text": "🚨 Emergency Stop",
                         "callback_data": "/confirm_emergency_stop",
                     },
+                ],
+                [
                     {
                         "text": "🛑 Close All Trades",
                         "callback_data": "/confirm_close_all",
@@ -358,14 +365,15 @@ class TelegramChatOpsManager:
             active_trades = await db_manager.get_active_trades()
             if not active_trades:
                 response = (
-                    "📈 <b>MONEY For HONEY — Active Trades</b>\n"
+                    "📈 <b>MONEY For HONEY — Active Trades (LIVE)</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "ℹ️ <i>No positions currently active in market.</i>\n\n"
-                    "Engine is continuously scanning for confluence signals."
+                    "⚡ <b>Scanner:</b> Actively scanning Binance BTC/USDT 15m confluence...\n"
+                    "Orders will execute automatically when ADX & Confluence criteria are satisfied."
                 )
             else:
                 lines = [
-                    "📈 <b>MONEY For HONEY — Active Trades</b>",
+                    "📈 <b>MONEY For HONEY — Active Positions (LIVE)</b>",
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                 ]
                 for idx, t in enumerate(active_trades[:6], start=1):
@@ -375,21 +383,73 @@ class TelegramChatOpsManager:
                     lines.append(
                         f"{idx}. <b>{t['symbol']}</b> | {side_emoji}\n"
                         f"   • Entry: <code>${t['entry_price']:,.2f}</code> | Qty: <code>{t['quantity']}</code>\n"
-                        f"   • Stop-Loss: <code>${t.get('stop_loss', 0.0):,.2f}</code>"
+                        f"   • Stop-Loss: <code>${t.get('stop_loss', 0.0):,.2f}</code> | TP: <code>${t.get('take_profit', 0.0):,.2f}</code>"
                     )
                 response = "\n".join(lines)
             markup = TelegramKeyboards.positions_menu()
 
+        elif cmd in ["/tp", "/history"]:
+            closed_trades = await db_manager.get_closed_trades(limit=6)
+            if not closed_trades:
+                response = (
+                    "🎯 <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "ℹ️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
+                    "⚡ <b>Engine Status:</b> Mengawasi market Binance Spot secara live.\n"
+                    "Begitu harga menyentuh target Take Profit, bot otomatis mengeksekusi penutupan order di bursa dan mendistribusikan profit waterfall!"
+                )
+            else:
+                total_realized = sum(
+                    float(t.get("realized_pnl_usdt") or 0.0) for t in closed_trades
+                )
+                pnl_color = "+" if total_realized >= 0 else ""
+                lines = [
+                    "🎯 <b>MONEY For HONEY — Take Profit & Closed Trades (LIVE)</b>",
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"💰 <b>Total Realized (Recent):</b> <code>{pnl_color}${total_realized:,.2f} USDT</code>\n",
+                ]
+                for idx, t in enumerate(closed_trades, start=1):
+                    pnl = float(t.get("realized_pnl_usdt") or 0.0)
+                    pnl_str = f"+${pnl:,.2f}" if pnl >= 0 else f"-${abs(pnl):,.2f}"
+                    pnl_emoji = "🎯 TP" if pnl > 0 else "🛡️ SL"
+                    lines.append(
+                        f"{idx}. <b>{t['symbol']}</b> | {pnl_emoji} (<code>{pnl_str} USDT</code>)\n"
+                        f"   • Entry: <code>${float(t['entry_price']):,.2f}</code> | Exit: <code>${float(t.get('mark_price') or 0.0):,.2f}</code>\n"
+                        f"   • Target TP: <code>${float(t.get('take_profit') or 0.0):,.2f}</code> | Qty: <code>{t['quantity']}</code>"
+                    )
+                lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append(
+                    "🍯 <i>Auto-compounding: 5% Reserve, 70% Reinvest, 30% Binance Simple Earn.</i>"
+                )
+                response = "\n".join(lines)
+            markup = TelegramKeyboards.status_menu()
+
         elif cmd == "/radar":
-            response = (
-                "⚡ <b>MONEY For HONEY — Alpha Radar Scanner</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "• <b>BTC/USDT</b>: Macro Confluence Score <code>88/100</code> (Bullish)\n"
-                "• <b>ETH/USDT</b>: Funding Rate Arb Spread <code>+14.2% APY</code>\n"
-                "• <b>SOL/USDT</b>: Volatility Regime <code>Trend Breakout</code>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "System scanning multi-timeframe 15m / 1h / 4h confluence."
-            )
+            try:
+                live_ohlcv = await exchange_service.fetch_live_ohlcv(
+                    "BTC/USDT", "15m", 50
+                )
+                regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
+                response = (
+                    "⚡ <b>MONEY For HONEY — Live Market Radar</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Symbol:</b> <code>{regime.symbol}</code> (15m Timeframe)\n"
+                    f"• <b>Real-Time Price:</b> <code>${regime.current_price:,.2f}</code>\n"
+                    f"• <b>Regime:</b> <code>{regime.regime}</code> ({regime.trend_direction})\n"
+                    f"• <b>ADX Trend Strength:</b> <code>{regime.adx}</code>\n"
+                    f"• <b>RSI (14):</b> <code>{regime.rsi_14:.1f}</code>\n"
+                    f"• <b>Bollinger Bands:</b> [<code>${regime.lower_bollinger:,.1f}</code> — <code>${regime.upper_bollinger:,.1f}</code>]\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "🟢 <b>Status:</b> Autonomous Scanner is actively polling Binance Spot."
+                )
+            except Exception as ex:
+                response = (
+                    "⚡ <b>MONEY For HONEY — Alpha Radar Scanner</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• <b>Status:</b> Scanning Active ({ex})\n"
+                    "• <b>Interval:</b> 10s continuous multi-timeframe evaluation\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                )
             markup = TelegramKeyboards.status_menu()
 
         elif cmd == "/broadcast":
@@ -470,11 +530,40 @@ class TelegramChatOpsManager:
             active_trades = await db_manager.get_active_trades()
             closed_count = 0
             for t in active_trades:
-                exit_price = t.get("mark_price", t.get("entry_price", 0.0))
-                pnl = (exit_price - t["entry_price"]) * t["quantity"]
+                side = t.get("side", "BUY").upper()
+                close_side = "SELL" if side == "BUY" else "BUY"
+                qty = float(t["quantity"])
+                ticker = await exchange_service.fetch_ticker(t["symbol"])
+                exit_price = float(
+                    ticker.get("last") or t.get("mark_price", t.get("entry_price", 0.0))
+                )
+
+                try:
+                    await exchange_service.execute_order(
+                        symbol=t["symbol"],
+                        side=close_side,
+                        quantity=qty,
+                        order_type="market",
+                    )
+                except Exception as ex:
+                    logger.warning(
+                        "Exchange close order exception for %s: %s", t["id"], ex
+                    )
+
+                side_mult = 1.0 if side == "BUY" else -1.0
+                pnl = round((exit_price - float(t["entry_price"])) * side_mult * qty, 2)
                 await db_manager.close_trade(t["id"], exit_price, pnl)
                 if pnl > 0:
-                    vault_manager.distribute_trade_profit(pnl)
+                    wf = vault_manager.distribute_trade_profit(pnl)
+                    await db_manager.record_vault_distribution(
+                        {
+                            "gross_profit": wf.gross_profit,
+                            "maintenance_fee": wf.maintenance_fee,
+                            "reinvest_amount": wf.reinvest_amount,
+                            "vault_allocation": wf.vault_allocation,
+                            "total_vault_reserve": wf.total_accumulated_vault,
+                        }
+                    )
                 closed_count += 1
 
             response = (

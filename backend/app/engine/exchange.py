@@ -14,7 +14,17 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import ccxt.async_support as ccxt
+try:
+    import ccxt.async_support as ccxt
+
+    CcxtBaseError = ccxt.BaseError
+    CcxtInsufficientFunds = ccxt.InsufficientFunds
+    CcxtInvalidOrder = ccxt.InvalidOrder
+except (ImportError, ModuleNotFoundError):
+    ccxt = None  # type: ignore[assignment]
+    CcxtBaseError = RuntimeError  # type: ignore[assignment]
+    CcxtInsufficientFunds = RuntimeError  # type: ignore[assignment]
+    CcxtInvalidOrder = RuntimeError  # type: ignore[assignment]
 
 from app.core.config import settings
 from app.core.security import key_vault
@@ -27,13 +37,19 @@ class ExchangeService:
 
     def __init__(self) -> None:
         self.testnet_mode: bool = getattr(settings, "TESTNET_MODE", True)
-        self.binance: ccxt.binance | None = None
-        self.bybit: ccxt.bybit | None = None
-        self.okx: ccxt.okx | None = None
+        self.binance: Any = None
+        self.bybit: Any = None
+        self.okx: Any = None
         self._init_exchanges()
 
     def _init_exchanges(self) -> None:
         """Initializes CCXT exchange connectors with decrypted keys."""
+        if not ccxt:
+            logger.warning(
+                "CCXT library not detected. Running ExchangeService in calibrated fallback mode."
+            )
+            return
+
         try:
             # 1. Binance
             binance_config: dict[str, Any] = {
@@ -90,8 +106,8 @@ class ExchangeService:
             if self.testnet_mode:
                 self.okx.set_sandbox_mode(True)
 
-        except (ccxt.BaseError, OSError, ValueError, RuntimeError) as e:
-            logger.exception("Failed to initialize CCXT exchanges: %s", e)
+        except (ccxt.BaseError, OSError, ValueError, RuntimeError):
+            logger.exception("Failed to initialize CCXT exchanges")
 
     async def fetch_account_balance(
         self, exchange_name: str = "binance"
@@ -277,16 +293,16 @@ class ExchangeService:
                 "executed_at": "SIMULATED_TESTNET",
                 "raw": {"simulated": True},
             }
-        except ccxt.InsufficientFunds as e:
+        except CcxtInsufficientFunds as e:
             logger.critical(
                 "Execution rejected: Insufficient funds on exchange (%s)", e
             )
             raise
-        except ccxt.InvalidOrder as e:
+        except CcxtInvalidOrder as e:
             logger.error("Execution rejected: Invalid order structure (%s)", e)
             raise
-        except (ccxt.BaseError, OSError, ValueError, RuntimeError) as e:
-            logger.exception("Execution error on exchange: %s", e)
+        except (CcxtBaseError, OSError, ValueError, RuntimeError):
+            logger.exception("Execution error on exchange")
             raise
 
     async def cancel_all_open_orders(self, symbol: str | None = None) -> int:

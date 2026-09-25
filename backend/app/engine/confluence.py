@@ -7,10 +7,20 @@ Prevents counter-trend whipsaws and false breakouts by requiring:
 3. Confluence Score calculation (0 - 100%)
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 
-import pandas as pd
+try:
+    import numpy as np
+    import pandas as pd
+
+    HAS_PANDAS = True
+except (ImportError, ModuleNotFoundError):
+    np = None  # type: ignore[assignment]
+    pd = None  # type: ignore[assignment]
+    HAS_PANDAS = False
 
 logger = logging.getLogger("money_for_honey.confluence")
 
@@ -48,7 +58,7 @@ class MultiTimeframeConfluenceEngine:
         """
         Parses 4H/1D OHLCV series and evaluates trend alignment.
         """
-        if not macro_ohlcv or len(macro_ohlcv) < 30:
+        if not HAS_PANDAS or not macro_ohlcv or len(macro_ohlcv) < 30:
             # Not enough historical macro bars: allow with neutral score
             return ConfluenceFilterResult(
                 symbol=symbol,

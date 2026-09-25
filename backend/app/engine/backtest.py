@@ -16,9 +16,17 @@ import logging
 import math
 import random
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-import numpy as np
-import pandas as pd
+from typing import Any
+
+try:
+    import numpy as np
+    import pandas as pd
+
+    HAS_DATA_LIBS = True
+except (ImportError, ModuleNotFoundError):
+    np = None  # type: ignore[assignment]
+    pd = None  # type: ignore[assignment]
+    HAS_DATA_LIBS = False
 
 logger = logging.getLogger("money_for_honey.backtest")
 
@@ -50,7 +58,7 @@ class MonteCarloResult:
     median_outcome: float
     confidence_interval_95_low: float
     risk_of_ruin_pct: float  # Probability of hitting drawdown threshold (>20%)
-    simulated_trajectories: List[List[float]]
+    simulated_trajectories: list[list[float]]
 
 
 class QuantitativeBacktestEngine:
@@ -64,15 +72,19 @@ class QuantitativeBacktestEngine:
         strategy_name: str,
         symbol: str,
         starting_equity: float = 10000.0,
-        historical_ohlcv: Optional[List[List[float]]] = None,
+        historical_ohlcv: list[list[float]] | None = None,
         risk_per_trade_pct: float = 0.015,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Executes historical strategy backtest.
         Generates realistic statistical distribution if no raw tick data provided.
         """
-        num_trades = 180 if strategy_name == "DYNAMIC_BREAKOUT_MOMENTUM" else (220 if strategy_name == "STATISTICAL_MEAN_REVERSION" else 310)
-        
+        num_trades = (
+            180
+            if strategy_name == "DYNAMIC_BREAKOUT_MOMENTUM"
+            else (220 if strategy_name == "STATISTICAL_MEAN_REVERSION" else 310)
+        )
+
         # Base realistic quantitative characteristics per strategy
         if strategy_name == "DYNAMIC_BREAKOUT_MOMENTUM":
             target_win_rate = 0.54
@@ -98,7 +110,7 @@ class QuantitativeBacktestEngine:
         for i in range(num_trades):
             risk_amount = equity * risk_per_trade_pct
             is_win = random.random() < target_win_rate
-            
+
             if is_win:
                 wins += 1
                 pnl = risk_amount * avg_win_r * random.uniform(0.85, 1.25)
@@ -123,11 +135,9 @@ class QuantitativeBacktestEngine:
         peak = starting_equity
         max_dd = 0.0
         for eq in equity_curve:
-            if eq > peak:
-                peak = eq
+            peak = max(peak, eq)
             dd = (peak - eq) / peak
-            if dd > max_dd:
-                max_dd = dd
+            max_dd = max(max_dd, dd)
         max_drawdown_pct = round(max_dd * 100.0, 2)
 
         # Sharpe & Sortino
@@ -142,7 +152,11 @@ class QuantitativeBacktestEngine:
         sharpe = round((mean_ret / (std_ret + 1e-6)) * annualization_factor, 2)
         sortino = round((mean_ret / (downside_std + 1e-6)) * annualization_factor, 2)
 
-        expectancy = round(((win_rate / 100.0) * avg_win_r) - ((1.0 - (win_rate / 100.0)) * avg_loss_r), 2)
+        expectancy = round(
+            ((win_rate / 100.0) * avg_win_r)
+            - ((1.0 - (win_rate / 100.0)) * avg_loss_r),
+            2,
+        )
 
         metrics = BacktestMetrics(
             strategy_name=strategy_name,
@@ -165,13 +179,15 @@ class QuantitativeBacktestEngine:
 
         return {
             "metrics": metrics.__dict__,
-            "equity_curve": equity_curve[:: max(1, len(equity_curve) // 40)],  # sampled points for UI
+            "equity_curve": equity_curve[
+                :: max(1, len(equity_curve) // 40)
+            ],  # sampled points for UI
             "trade_returns": trade_returns,
         }
 
     def run_monte_carlo(
         self,
-        trade_returns: List[float],
+        trade_returns: list[float],
         starting_equity: float = 10000.0,
         iterations: int = 500,
         horizon_trades: int = 100,
@@ -195,9 +211,8 @@ class QuantitativeBacktestEngine:
 
             for _ in range(horizon_trades):
                 ret = random.choice(trade_returns)
-                eq *= (1.0 + ret)
-                if eq > peak:
-                    peak = eq
+                eq *= 1.0 + ret
+                peak = max(peak, eq)
                 dd = (peak - eq) / peak
                 if dd >= ruin_drawdown_limit:
                     hit_ruin = True

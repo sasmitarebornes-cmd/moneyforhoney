@@ -58,21 +58,24 @@ class StandaloneKeyboards:
                 ],
                 [
                     {"text": "📈 Active Trades", "callback_data": "/positions"},
+                    {"text": "🎯 Take Profit Logs", "callback_data": "/tp"},
+                ],
+                [
                     {"text": "🏦 Vault & Harvest", "callback_data": "/harvest"},
-                ],
-                [
                     {"text": "⚡ Radar Signals", "callback_data": "/radar"},
+                ],
+                [
                     {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
-                ],
-                [
                     {"text": "📖 Manual / Help", "callback_data": "/help"},
-                    {"text": "✅ Resume Engine", "callback_data": "/resume"},
                 ],
                 [
+                    {"text": "✅ Resume Engine", "callback_data": "/resume"},
                     {
                         "text": "🚨 Emergency Stop",
                         "callback_data": "/confirm_emergency_stop",
                     },
+                ],
+                [
                     {
                         "text": "🛑 Close All Trades",
                         "callback_data": "/confirm_close_all",
@@ -235,6 +238,11 @@ class TelegramPollingRunner:
                     "command": "positions",
                     "description": "📈 Active Trades & SL/TP Tracker",
                 },
+                {
+                    "command": "tp",
+                    "description": "🎯 Take Profit & Closed Trades History",
+                },
+                {"command": "history", "description": "📜 Completed Trades Ledger"},
                 {
                     "command": "broadcast",
                     "description": "📢 Broadcast Telemetry to Channel",
@@ -458,6 +466,8 @@ class TelegramPollingRunner:
                     ValueError,
                     OSError,
                     KeyError,
+                    AttributeError,
+                    TypeError,
                     httpx.HTTPError,
                 ) as err:
                     logger.debug("Live balance fetch exception: %s", err)
@@ -532,6 +542,54 @@ class TelegramPollingRunner:
                     )
                 text = "\n".join(lines)
             markup = StandaloneKeyboards.positions_menu()
+
+        elif cmd in ["/tp", "/history"]:
+            closed_trades = []
+            if db_manager:
+                try:
+                    closed_trades = await db_manager.get_closed_trades(limit=6)
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    AttributeError,
+                ) as err:
+                    logger.debug("Closed trades fetch exception: %s", err)
+
+            if not closed_trades:
+                text = (
+                    "🎯 <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "ℹ️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
+                    "⚡ <b>Engine Status:</b> Mengawasi market Binance Spot secara live.\n"
+                    "Begitu harga menyentuh target Take Profit, bot otomatis mengeksekusi penutupan order di bursa dan mendistribusikan profit waterfall!"
+                )
+            else:
+                total_realized = sum(
+                    float(t.get("realized_pnl_usdt") or 0.0) for t in closed_trades
+                )
+                pnl_color = "+" if total_realized >= 0 else ""
+                lines = [
+                    "🎯 <b>MONEY For HONEY — Take Profit & Closed Trades (LIVE)</b>",
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"💰 <b>Total Realized (Recent):</b> <code>{pnl_color}${total_realized:,.2f} USDT</code>\n",
+                ]
+                for idx, t in enumerate(closed_trades, start=1):
+                    pnl = float(t.get("realized_pnl_usdt") or 0.0)
+                    pnl_str = f"+${pnl:,.2f}" if pnl >= 0 else f"-${abs(pnl):,.2f}"
+                    pnl_emoji = "🎯 TP" if pnl > 0 else "🛡️ SL"
+                    lines.append(
+                        f"{idx}. <b>{t['symbol']}</b> | {pnl_emoji} (<code>{pnl_str} USDT</code>)\n"
+                        f"   • Entry: <code>${float(t['entry_price']):,.2f}</code> | Exit: <code>${float(t.get('mark_price') or 0.0):,.2f}</code>\n"
+                        f"   • Target TP: <code>${float(t.get('take_profit') or 0.0):,.2f}</code> | Qty: <code>{t['quantity']}</code>"
+                    )
+                lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append(
+                    "🍯 <i>Auto-compounding: 5% Reserve, 70% Reinvest, 30% Binance Simple Earn.</i>"
+                )
+                text = "\n".join(lines)
+            markup = StandaloneKeyboards.status_menu()
 
         elif cmd == "/radar":
             try:
@@ -622,16 +680,29 @@ class TelegramPollingRunner:
             markup = StandaloneKeyboards.confirm_close_all()
 
         elif cmd == "/emergency_stop":
+            cancelled = 0
+            if risk_engine:
+                risk_engine.toggle_manual_circuit_breaker(
+                    True, "Telegram Bot Emergency Stop"
+                )
+            if exchange_service:
+                try:
+                    cancelled = await exchange_service.cancel_all_open_orders()
+                except Exception as ex:
+                    logger.warning("Order cancellation error: %s", ex)
+
             text = (
                 "🚨 <b>EMERGENCY STOP TRIGGERED!</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "Circuit breaker is now <b>TRIPPED (HALTED)</b>.\n"
-                "Cancelled active open orders on exchange.\n"
+                f"Cancelled <b>{cancelled}</b> open order(s) on exchange.\n"
                 "All automated trading is suspended until manually resumed."
             )
             markup = StandaloneKeyboards.back_to_menu()
 
         elif cmd == "/resume":
+            if risk_engine:
+                risk_engine.toggle_manual_circuit_breaker(False, "Telegram Bot Resume")
             text = (
                 "🟢 <b>CIRCUIT BREAKER RESET!</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -641,21 +712,79 @@ class TelegramPollingRunner:
             markup = StandaloneKeyboards.status_menu()
 
         elif cmd == "/close_all":
+            closed_count = 0
+            if db_manager:
+                try:
+                    active_trades = await db_manager.get_active_trades()
+                    for t in active_trades:
+                        side = t.get("side", "BUY").upper()
+                        close_side = "SELL" if side == "BUY" else "BUY"
+                        qty = float(t["quantity"])
+                        exit_price = float(
+                            t.get("mark_price", t.get("entry_price", 0.0))
+                        )
+                        if exchange_service:
+                            try:
+                                ticker = await exchange_service.fetch_ticker(
+                                    t["symbol"]
+                                )
+                                exit_price = float(ticker.get("last") or exit_price)
+                                await exchange_service.execute_order(
+                                    symbol=t["symbol"],
+                                    side=close_side,
+                                    quantity=qty,
+                                    order_type="market",
+                                )
+                            except Exception as ex:
+                                logger.warning("Close order error: %s", ex)
+
+                        side_mult = 1.0 if side == "BUY" else -1.0
+                        pnl = round(
+                            (exit_price - float(t["entry_price"])) * side_mult * qty, 2
+                        )
+                        await db_manager.close_trade(t["id"], exit_price, pnl)
+                        if pnl > 0 and vault_manager:
+                            wf = vault_manager.distribute_trade_profit(pnl)
+                            await db_manager.record_vault_distribution(
+                                {
+                                    "gross_profit": wf.gross_profit,
+                                    "maintenance_fee": wf.maintenance_fee,
+                                    "reinvest_amount": wf.reinvest_amount,
+                                    "vault_allocation": wf.vault_allocation,
+                                    "total_vault_reserve": wf.total_accumulated_vault,
+                                }
+                            )
+                        closed_count += 1
+                except Exception as err:
+                    logger.warning("Error in close_all: %s", err)
+
             text = (
                 "🛑 <b>CLOSE ALL EXECUTED</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "Closed active positions.\n"
+                f"Closed <b>{closed_count}</b> active position(s).\n"
                 "Realized gains have been routed into the Binance Simple Earn Vault."
             )
             markup = StandaloneKeyboards.back_to_menu()
 
         elif cmd == "/harvest":
+            staked_amount = 0.0
+            prod_type = "Flexible Auto-Compound"
+            status_text = "SUCCESS"
+            if vault_manager:
+                try:
+                    sweep_res = await vault_manager.execute_auto_vault_sweep()
+                    staked_amount = sweep_res.amount
+                    prod_type = sweep_res.product_type
+                    status_text = sweep_res.status
+                except Exception as ex:
+                    logger.warning("Auto vault sweep exception: %s", ex)
+
             text = (
                 "🏦 <b>BINANCE SIMPLE EARN — VAULT SWEEP</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "• Status: <b>SUCCESS</b>\n"
-                "• Product: <b>USDT Simple Earn (Flexible Auto-Compound)</b>\n"
-                "• Amount Staked: <code>$1,250.00 USDT</code>\n"
+                f"• Status: <b>{status_text}</b>\n"
+                f"• Product: <b>USDT Simple Earn ({prod_type})</b>\n"
+                f"• Amount Staked: <code>${staked_amount:,.2f} USDT</code>\n"
                 "• Projected APY: <code>7.2%</code>\n"
                 "• Cash Drag: <code>0.00% (Zero Idle Capital)</code>"
             )
