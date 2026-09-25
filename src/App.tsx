@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useId } from "react";
+import React, { useState, useEffect } from "react";
 import Logo from "./components/Logo";
 import confetti from "canvas-confetti";
 import { HistoricalTrade, PnLLedgerEntry, PnLCardConfig } from "./types";
@@ -19,13 +19,12 @@ import {
   ShieldAlert,
   ShieldCheck,
   TrendingUp,
-  Vault,
+  Landmark,
   Zap,
   RefreshCw,
   Sliders,
   AlertTriangle,
   ArrowUpRight,
-  ArrowDownRight,
   CheckCircle2,
   Lock,
   Layers,
@@ -33,30 +32,12 @@ import {
   Send,
   Bell,
   Cpu,
-  Clock,
   DollarSign,
   BarChart3,
-  Percent,
-  Play,
-  Pause,
-  ChevronRight,
-  FileCode2,
-  ExternalLink,
-  Info,
-  Check,
-  X,
-  Volume2,
-  VolumeX,
   Sparkles,
   History,
-  Image,
-  Share2,
   GitMerge,
   Terminal,
-  Server,
-  Wifi,
-  WifiOff,
-  Globe,
 } from "lucide-react";
 
 interface ActiveTrade {
@@ -364,6 +345,16 @@ export default function App() {
         const liveTrades = await LiveBridgeService.fetchLiveTrades();
         if (liveTrades && Array.isArray(liveTrades) && liveTrades.length > 0) {
           setActiveTrades(liveTrades);
+        }
+
+        // Try to fetch closed historical trades from backend
+        const closedTrades = await LiveBridgeService.fetchClosedTrades();
+        if (
+          closedTrades &&
+          Array.isArray(closedTrades) &&
+          closedTrades.length > 0
+        ) {
+          setHistoricalTrades(closedTrades);
         }
       } else {
         // Retain current connection state and live balance even during transient network jitter
@@ -1072,7 +1063,7 @@ export default function App() {
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Vault className="w-3.5 h-3.5 text-amber-400" />
+            <Landmark className="w-3.5 h-3.5 text-amber-400" />
             Binance Earn Vault
             <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-400">
               ${vaultData.totalVaultEquity.toFixed(0)}
@@ -1363,7 +1354,7 @@ export default function App() {
                   <span className="uppercase tracking-wider font-semibold">
                     Binance Earn Vault
                   </span>
-                  <Vault className="w-4 h-4 text-amber-400" />
+                  <Landmark className="w-4 h-4 text-amber-400" />
                 </div>
                 <div className="flex items-baseline gap-2.5">
                   <span className="font-mono text-2xl lg:text-3xl font-bold text-amber-300 tracking-tight">

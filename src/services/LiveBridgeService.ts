@@ -111,7 +111,114 @@ export class LiveBridgeService {
       : this.host;
     try {
       const res = await fetch(`${cleanUrl}/api/trades/active`);
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const raw = await res.json();
+        if (Array.isArray(raw)) {
+          return raw.map((t: any) => {
+            const entry = Number(t.entry_price ?? t.entryPrice ?? 0);
+            const mark = Number(t.mark_price ?? t.markPrice ?? entry);
+            const sl = Number(t.stop_loss ?? t.stopLoss ?? 0);
+            const tp = Number(t.take_profit ?? t.takeProfit ?? 0);
+            const qty = Number(t.quantity ?? 0);
+            const rawNotional = t.notional_usdt ?? t.notionalUsdt;
+            const notional =
+              rawNotional != null
+                ? Number(rawNotional)
+                : entry * qty > 0
+                  ? entry * qty
+                  : 10;
+            const risk = Number(
+              t.allocated_risk_usdt ?? t.allocatedRiskUsdt ?? notional * 0.015,
+            );
+            const pnl = Number(
+              t.unrealized_pnl_usdt ?? t.unrealizedPnlUsdt ?? 0,
+            );
+            const pnlPct = notional > 0 ? (pnl / notional) * 100 : 0;
+            return {
+              id: String(
+                t.id || `live-${Math.random().toString(36).slice(2, 7)}`,
+              ),
+              symbol: String(t.symbol || "BTC/USDT"),
+              strategy: String(t.strategy || "DYNAMIC_RANGE_ACCUMULATOR"),
+              side: (t.side || "BUY").toUpperCase() as
+                | "BUY"
+                | "SELL"
+                | "ARBITRAGE",
+              entryPrice: entry,
+              markPrice: mark,
+              stopLoss: sl,
+              takeProfit: tp,
+              quantity: qty,
+              notionalUsdt: notional,
+              allocatedRiskUsdt: risk,
+              unrealizedPnlUsdt: pnl,
+              unrealizedPnlPct: Number(pnlPct.toFixed(2)),
+              duration: String(t.duration || "15m"),
+              leverage: String(t.leverage || "Spot 1x"),
+              trailingStopActive: Boolean(
+                t.trailing_stop_active ?? t.trailingStopActive ?? false,
+              ),
+            };
+          });
+        }
+      }
+    } catch {
+      // silent fallback
+    }
+    return null;
+  }
+
+  public static async fetchClosedTrades(): Promise<HistoricalTrade[] | null> {
+    if (!this.host) return null;
+    const cleanUrl = this.host.endsWith("/")
+      ? this.host.slice(0, -1)
+      : this.host;
+    try {
+      const res = await fetch(`${cleanUrl}/api/trades/closed?limit=50`);
+      if (res.ok) {
+        const raw = await res.json();
+        if (Array.isArray(raw)) {
+          return raw.map((item: any) => {
+            const realized = Number(
+              item.realized_pnl_usdt ?? item.realizedPnlUsdt ?? 0,
+            );
+            const entry = Number(item.entry_price ?? item.entryPrice ?? 1);
+            const exit = Number(item.mark_price ?? item.exitPrice ?? entry);
+            const qty = Number(item.quantity ?? 0);
+            const rawNotional = item.notional_usdt ?? item.notionalUsdt;
+            const stake =
+              rawNotional != null
+                ? Number(rawNotional)
+                : entry * qty > 0
+                  ? entry * qty
+                  : 10;
+            const roi = stake > 0 ? (realized / stake) * 100 : 0;
+            const fee = realized > 0 ? realized * 0.05 : 0;
+            const net = realized > 0 ? realized - fee : 0;
+            return {
+              id: String(item.id || `tr-${Math.random()}`),
+              symbol: String(item.symbol || "BTC/USDT"),
+              strategy: String(item.strategy || "DYNAMIC_RANGE_ACCUMULATOR"),
+              side: (item.side || "BUY").toUpperCase() as "BUY" | "SELL",
+              entryPrice: entry,
+              exitPrice: exit,
+              quantity: qty,
+              stakeUsdt: stake > 0 ? stake : 10,
+              realizedPnlUsdt: realized,
+              roiPct: roi,
+              status: realized >= 0 ? "WIN" : "LOSS",
+              feeUsdt: fee,
+              reinvestUsdt: net * 0.7,
+              vaultUsdt: net * 0.3,
+              exchange: "BINANCE",
+              closedAt: item.created_at || new Date().toISOString(),
+              duration: "15m",
+              riskProfile: "Moderate",
+              winScore: realized >= 0 ? "5/5" : "3/5",
+            };
+          });
+        }
+      }
     } catch {
       // silent fallback
     }

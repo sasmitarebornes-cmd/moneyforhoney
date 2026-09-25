@@ -668,6 +668,7 @@ async def deploy_funding_arbitrage(payload: DeployFundingRequest) -> dict[str, A
 # 4. Interactive Telegram ChatOps Remote API
 # ==========================================
 @router.post("/telegram/test-command")
+@router.post("/telegram/command")
 async def test_telegram_chatops(payload: TelegramCommandRequest) -> dict[str, Any]:
     """Directly invokes a ChatOps command from the dashboard UI."""
     response_text = await chatops_bot.process_command(
