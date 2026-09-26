@@ -8,11 +8,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Vault,
-  Zap,
   Cpu,
-  Info,
   Layers,
-  Server,
 } from "lucide-react";
 
 export default function TelegramChatOpsView() {
