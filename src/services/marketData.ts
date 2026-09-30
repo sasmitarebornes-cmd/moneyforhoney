@@ -13,10 +13,10 @@ const DEFAULT_TICKERS: Record<string, LiveTicker> = {
   "BTC/USDT": {
     symbol: "BTCUSDT",
     displayName: "BTC/USDT",
-    price: 92450.0,
+    price: 84420.0,
     change24h: 3.42,
-    high24h: 93800.0,
-    low24h: 89400.0,
+    high24h: 85200.0,
+    low24h: 83100.0,
     volume24h: 34512.4,
     lastUpdated: "Just now",
   },
@@ -40,6 +40,36 @@ const DEFAULT_TICKERS: Record<string, LiveTicker> = {
     volume24h: 1245000.0,
     lastUpdated: "Just now",
   },
+  "HYPE/USDT": {
+    symbol: "HYPEUSDT",
+    displayName: "HYPE/USDT",
+    price: 28.65,
+    change24h: 12.45,
+    high24h: 31.2,
+    low24h: 24.8,
+    volume24h: 890450.0,
+    lastUpdated: "Just now",
+  },
+  "SUI/USDT": {
+    symbol: "SUIUSDT",
+    displayName: "SUI/USDT",
+    price: 3.42,
+    change24h: 6.78,
+    high24h: 3.65,
+    low24h: 3.15,
+    volume24h: 6420100.0,
+    lastUpdated: "Just now",
+  },
+  "NEAR/USDT": {
+    symbol: "NEARUSDT",
+    displayName: "NEAR/USDT",
+    price: 6.85,
+    change24h: 4.92,
+    high24h: 7.15,
+    low24h: 6.4,
+    volume24h: 1854200.0,
+    lastUpdated: "Just now",
+  },
   "BNB/USDT": {
     symbol: "BNBUSDT",
     displayName: "BNB/USDT",
@@ -60,6 +90,16 @@ const DEFAULT_TICKERS: Record<string, LiveTicker> = {
     volume24h: 98400000.0,
     lastUpdated: "Just now",
   },
+  "XRP/USDT": {
+    symbol: "XRPUSDT",
+    displayName: "XRP/USDT",
+    price: 2.38,
+    change24h: 8.14,
+    high24h: 2.52,
+    low24h: 2.18,
+    volume24h: 78940000.0,
+    lastUpdated: "Just now",
+  },
   "AVAX/USDT": {
     symbol: "AVAXUSDT",
     displayName: "AVAX/USDT",
@@ -72,11 +112,24 @@ const DEFAULT_TICKERS: Record<string, LiveTicker> = {
   },
 };
 
-export async function fetchLiveCryptoPrices(): Promise<Record<string, LiveTicker>> {
+export async function fetchLiveCryptoPrices(): Promise<
+  Record<string, LiveTicker>
+> {
   try {
-    const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT", "AVAXUSDT"];
+    const symbols = [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "HYPEUSDT",
+      "SUIUSDT",
+      "NEARUSDT",
+      "BNBUSDT",
+      "DOGEUSDT",
+      "XRPUSDT",
+      "AVAXUSDT",
+    ];
     const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(
-      JSON.stringify(symbols)
+      JSON.stringify(symbols),
     )}`;
 
     const controller = new AbortController();
@@ -85,52 +138,61 @@ export async function fetchLiveCryptoPrices(): Promise<Record<string, LiveTicker
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 
-    if (!res.ok) {
-      throw new Error(`Binance API error: ${res.statusText}`);
-    }
-
-    const data = await res.json();
     const result: Record<string, LiveTicker> = { ...DEFAULT_TICKERS };
 
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        const pairKey =
-          item.symbol === "BTCUSDT"
-            ? "BTC/USDT"
-            : item.symbol === "ETHUSDT"
-            ? "ETH/USDT"
-            : item.symbol === "SOLUSDT"
-            ? "SOL/USDT"
-            : item.symbol === "BNBUSDT"
-            ? "BNB/USDT"
-            : item.symbol === "DOGEUSDT"
-            ? "DOGE/USDT"
-            : item.symbol === "AVAXUSDT"
-            ? "AVAX/USDT"
-            : null;
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          const rawSym = item.symbol;
+          const pairKey =
+            rawSym === "BTCUSDT"
+              ? "BTC/USDT"
+              : rawSym === "ETHUSDT"
+                ? "ETH/USDT"
+                : rawSym === "SOLUSDT"
+                  ? "SOL/USDT"
+                  : rawSym === "HYPEUSDT"
+                    ? "HYPE/USDT"
+                    : rawSym === "SUIUSDT"
+                      ? "SUI/USDT"
+                      : rawSym === "NEARUSDT"
+                        ? "NEAR/USDT"
+                        : rawSym === "BNBUSDT"
+                          ? "BNB/USDT"
+                          : rawSym === "DOGEUSDT"
+                            ? "DOGE/USDT"
+                            : rawSym === "XRPUSDT"
+                              ? "XRP/USDT"
+                              : rawSym === "AVAXUSDT"
+                                ? "AVAX/USDT"
+                                : null;
 
-        if (pairKey) {
-          result[pairKey] = {
-            symbol: item.symbol,
-            displayName: pairKey,
-            price: parseFloat(item.lastPrice),
-            change24h: parseFloat(item.priceChangePercent),
-            high24h: parseFloat(item.highPrice),
-            low24h: parseFloat(item.lowPrice),
-            volume24h: parseFloat(item.volume),
-            lastUpdated: new Date().toLocaleTimeString(),
-          };
+          if (pairKey) {
+            result[pairKey] = {
+              symbol: item.symbol,
+              displayName: pairKey,
+              price: parseFloat(item.lastPrice),
+              change24h: parseFloat(item.priceChangePercent),
+              high24h: parseFloat(item.highPrice),
+              low24h: parseFloat(item.lowPrice),
+              volume24h: parseFloat(item.volume),
+              lastUpdated: new Date().toLocaleTimeString(),
+            };
+          }
         }
       }
     }
 
     return result;
-  } catch (error) {
+  } catch {
     // Return gracefully with dynamic micro-variations if rate limited
     const fallback = { ...DEFAULT_TICKERS };
     Object.keys(fallback).forEach((key) => {
       const jitter = (Math.random() - 0.5) * (fallback[key].price * 0.001);
-      fallback[key].price = parseFloat((fallback[key].price + jitter).toFixed(2));
+      fallback[key].price = parseFloat(
+        (fallback[key].price + jitter).toFixed(2),
+      );
       fallback[key].lastUpdated = new Date().toLocaleTimeString();
     });
     return fallback;
