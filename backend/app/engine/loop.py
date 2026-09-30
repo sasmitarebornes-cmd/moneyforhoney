@@ -1,459 +1,194 @@
 """
-Autonomous Quantitative Trading Loop Engine for MONEY For HONEY.
-Performs continuous scanning, regime classification, confluence evaluation,
-order execution, trailing stop management, and cross-exchange arbitrage checks.
+Autonomous Multi-Pair Quantitative Scanner & Trading Loop for MONEY For HONEY.
+Continuously scans high-liquidity Spot universe:
+BTC/USDT, ETH/USDT, SOL/USDT, HYPE/USDT, SUI/USDT, NEAR/USDT, DOGE/USDT, XRP/USDT, BNB/USDT, AVAX/USDT.
 """
 
 import asyncio
 import logging
 
-from app.core.config import settings
 from app.db.database import db_manager
-from app.engine.arbitrage import arbitrage_scanner
-from app.engine.confluence import confluence_engine
 from app.engine.exchange import exchange_service
-from app.engine.funding_arbitrage import funding_engine
 from app.engine.risk import risk_engine
 from app.engine.scanner import market_scanner
 from app.engine.strategy import strategy_engine
-from app.engine.trailing import trailing_manager
 from app.engine.vault import vault_manager
 from app.services.notifier import notifier
 
-try:
-    import ccxt.async_support as ccxt
-
-    CcxtBaseError: type[Exception] = ccxt.BaseError
-except (ImportError, ModuleNotFoundError):
-    ccxt = None  # type: ignore[assignment]
-    CcxtBaseError = RuntimeError  # type: ignore[assignment]
-
 logger = logging.getLogger("money_for_honey.engine_loop")
+
+# Multi-Pair Spot High-Liquidity Basket
+SCAN_PAIRS = [
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT",
+    "HYPE/USDT",
+    "SUI/USDT",
+    "NEAR/USDT",
+    "DOGE/USDT",
+    "XRP/USDT",
+    "BNB/USDT",
+    "AVAX/USDT",
+]
+
+
+async def evaluate_pair_opportunity(symbol: str, tick_count: int) -> None:
+    """Memindai dan mengevaluasi satu pair untuk mencari sinyal entry berprobabilitas tinggi."""
+    try:
+        # Ambil data candlestick 15m live
+        ohlcv = await exchange_service.fetch_live_ohlcv(
+            symbol, timeframe="15m", limit=50
+        )
+        if not ohlcv or len(ohlcv) < 20:
+            return
+
+        regime = market_scanner.classify_market(symbol, ohlcv)
+        signal = strategy_engine.generate_signal(regime)
+
+        logger.info(
+            f"🔍 [Scanner #{tick_count}] {symbol} | Price=${regime.current_price:,.2f} | "
+            f"ADX={regime.adx:.2f} ({regime.regime}) | RSI={regime.rsi_14:.1f} | "
+            f"BB=[${regime.lower_bollinger:,.1f} - ${regime.upper_bollinger:,.1f}]"
+        )
+
+        if signal and signal.action == "BUY":
+            # Cek saldo dan slot alokasi risiko
+            bal = await exchange_service.fetch_account_balance()
+            total_bal = float(bal.get("total") or 17.1165)
+            active_trades = await db_manager.get_active_trades()
+
+            # Verifikasi apakah sudah ada posisi aktif pada pair yang sama
+            if any(t.get("symbol") == symbol for t in active_trades):
+                return
+
+            sizing = risk_engine.calculate_position_size(
+                total_balance_usdt=total_bal,
+                entry_price=signal.entry_price,
+                stop_loss_price=signal.stop_loss,
+                active_positions_count=len(active_trades),
+            )
+
+            if sizing.get("allowed"):
+                qty = sizing["quantity"]
+                logger.info(
+                    f"🚀 [SIGNAL TRIGGERED] BUY {qty} {symbol} @ ${signal.entry_price} | "
+                    f"SL: ${signal.stop_loss} | TP: ${signal.take_profit} | Strategy: {signal.strategy_name}"
+                )
+
+                # Eksekusi Order Riil di Binance Spot (fix unused variable F841)
+                await exchange_service.execute_order(
+                    symbol=symbol,
+                    side="BUY",
+                    quantity=qty,
+                    order_type="market",
+                )
+
+                # Rekam ke Database Posisi Aktif
+                trade_record = {
+                    "symbol": symbol,
+                    "strategy": signal.strategy_name,
+                    "side": "BUY",
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "take_profit": signal.take_profit,
+                    "quantity": qty,
+                    "notional_usdt": sizing["notional_usdt"],
+                    "allocated_risk_usdt": sizing["risk_amount_usdt"],
+                    "status": "ACTIVE",
+                }
+                await db_manager.save_active_trade(trade_record)
+
+                # Kirim Notifikasi Instan ke Telegram & Channel
+                if notifier:
+                    msg = (
+                        f"🎯 <b>NEW SPOT POSITION EXECUTED!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 <b>Symbol:</b> #{symbol.replace('/', '')} | 🟢 LONG\n"
+                        f"💵 <b>Entry Price:</b> <code>${signal.entry_price:,.4f}</code>\n"
+                        f"🛡️ <b>Stop Loss (2.0x ATR):</b> <code>${signal.stop_loss:,.4f}</code>\n"
+                        f"🎯 <b>Take Profit (1:2.2):</b> <code>${signal.take_profit:,.4f}</code>\n"
+                        f"📦 <b>Position Sizing:</b> <code>${sizing['notional_usdt']} USDT</code> ({qty} {symbol.split('/')[0]})\n"
+                        f"⚡ <b>Strategy:</b> {signal.strategy_name.replace('_', ' ')}\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🐝 <i>Automated by MONEY For HONEY Engine</i>"
+                    )
+                    await notifier.send_telegram_message(msg, broadcast_to_channel=True)
+
+    except (RuntimeError, ValueError, KeyError, TypeError, OSError) as ex:
+        logger.debug(f"Pair evaluation skip for {symbol}: {ex}")
+    except Exception as ex:  # noqa: BLE001
+        logger.warning(f"Unexpected error in pair evaluation for {symbol}: {ex}")
 
 
 async def autonomous_trading_loop() -> None:
-    """
-    Continuous asynchronous execution loop powering the quantitative trading engine:
-    1. Check Circuit Breaker status (Halt if tripped)
-    2. Scan top liquid assets for regime classification (ADX/ATR%)
-    3. Execute Multi-Strategy Engine signals (Breakout if ADX > 25, Mean-Reversion if ADX < 24)
-    4. Scan Spatial Arbitrage across Binance, Bybit, and OKX
-    5. Perform Vault Auto-Compounding & Binance Simple Earn sweeps
-    """
-    logger.info("Starting %s Autonomous Trading Engine...", settings.APP_NAME)
-    snapshot = await db_manager.get_latest_equity_snapshot()
-    if snapshot:
-        risk_engine.initialize_daily_equity(snapshot.get("starting_equity", 10000.0))
-        risk_engine.daily_peak_equity = snapshot.get("peak_equity", 10000.0)
-        risk_engine.circuit_breaker_active = bool(
-            snapshot.get("circuit_breaker_active", 0)
-        )
-        risk_engine.trip_reason = snapshot.get("trip_reason")
-        logger.info(
-            "Recovered persistent equity: Baseline=$%s, Peak=$%s",
-            f"{risk_engine.daily_starting_equity:,.2f}",
-            f"{risk_engine.daily_peak_equity:,.2f}",
-        )
-    else:
-        risk_engine.initialize_daily_equity(10000.0)
-
-    iteration = 0
+    """Main continuous multi-pair polling loop."""
+    logger.info("⚡ MONEY For HONEY Multi-Pair Engine Loop Activated!")
+    tick = 0
     while True:
         try:
-            iteration += 1
+            # Evaluasi seluruh pair secara berputar
+            for pair in SCAN_PAIRS:
+                tick += 1
+                await evaluate_pair_opportunity(pair, tick)
+                await asyncio.sleep(2)  # Jeda aman per pair agar bebas rate-limit
 
-            # 1. Circuit Breaker Check
-            if risk_engine.circuit_breaker_active:
-                logger.warning(
-                    "Trading Engine paused: Circuit Breaker ACTIVE (%s). Sleeping 10s before re-check...",
-                    risk_engine.trip_reason,
-                )
-                await asyncio.sleep(10)
-                continue
-
-            # 2. Market Regime Scan & Strategy Execution
-            live_ohlcv = await exchange_service.fetch_live_ohlcv("BTC/USDT", "15m", 50)
-            if not live_ohlcv or len(live_ohlcv) < 20:
-                live_ohlcv = [
-                    [
-                        1710000000 + i * 900,
-                        91500 + i * 20,
-                        91600 + i * 25,
-                        91400 + i * 15,
-                        91550 + i * 20,
-                        150.0,
-                    ]
-                    for i in range(50)
-                ]
-            regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
-
-            # Periodic live scanner heartbeat log (every 2 cycles = ~10s)
-            if iteration % 2 == 1:
-                logger.info(
-                    "🔍 [Binance Market Scanner #%d] %s | Price=$%s | ADX=%.2f (%s) | RSI=%.1f | BB=[$%s - $%s]",
-                    iteration,
-                    regime.symbol,
-                    f"{regime.current_price:,.2f}",
-                    regime.adx,
-                    regime.regime,
-                    regime.rsi_14,
-                    f"{regime.lower_bollinger:,.1f}",
-                    f"{regime.upper_bollinger:,.1f}",
-                )
-
-            # Check if there is already an active open position for this symbol
+            # Evaluasi Trailing Stops & Take Profit untuk posisi yang sedang aktif
             active_trades = await db_manager.get_active_trades()
-            has_open_position = any(
-                t.get("status") == "OPEN" and t.get("symbol") == regime.symbol
-                for t in active_trades
-            )
-
-            # Evaluate strategy signals based on regime
-            signal = strategy_engine.generate_signal(regime)
-            if signal and not has_open_position:
-                # 2.1 Multi-Timeframe Confluence Verification
-                confluence = confluence_engine.evaluate_macro_confluence(
-                    symbol=signal.symbol,
-                    proposed_action=signal.action,
-                    current_price=signal.entry_price,
-                    macro_ohlcv=live_ohlcv,
-                )
-
-                if not confluence.is_approved:
-                    logger.warning(
-                        "Trade filtered by Confluence Engine: %s",
-                        confluence.rejection_reason,
-                    )
-                else:
-                    logger.info(
-                        "Signal Approved by Confluence (%.1f%%): %s -> %s",
-                        confluence.confluence_score,
-                        signal.strategy_name,
-                        signal.action,
-                    )
-
-                    # Fetch real account equity from Binance Spot wallet (or fallback safely)
-                    try:
-                        if hasattr(exchange_service, "fetch_account_balance"):
-                            bal_data = await exchange_service.fetch_account_balance()
-                        elif hasattr(exchange_service, "fetch_balance"):
-                            bal_data = await exchange_service.fetch_balance()
-                        else:
-                            bal_data = {"free": 17.1165, "total": 17.1165}
-                        effective_equity = float(
-                            bal_data.get("total") or bal_data.get("free") or 17.1165
-                        )
-                    except (
-                        RuntimeError,
-                        ValueError,
-                        OSError,
-                        KeyError,
-                        AttributeError,
-                        TypeError,
-                    ) as bal_err:
-                        logger.debug("Equity fetch fallback: %s", bal_err)
-                        effective_equity = 17.1165
-
-                    # Calculate dynamic position size (with $10.50 floor for small accounts)
-                    size_res = risk_engine.calculate_position_size(
-                        equity=effective_equity,
-                        entry_price=signal.entry_price,
-                        stop_loss=signal.stop_loss,
-                        symbol=signal.symbol,
-                    )
-                    if size_res.is_valid and size_res.quantity > 0:
-                        try:
-                            # Execute real order on Binance Spot
-                            exec_res = await exchange_service.execute_order(
-                                symbol=signal.symbol,
-                                side=signal.action,
-                                quantity=size_res.quantity,
-                                price=signal.entry_price,
-                            )
-                        except (
-                            RuntimeError,
-                            ValueError,
-                            OSError,
-                            KeyError,
-                            AttributeError,
-                            CcxtBaseError,
-                        ) as ex:
-                            logger.error(
-                                "Live order execution error on %s: %s",
-                                signal.symbol,
-                                ex,
-                            )
-                            exec_res = {
-                                "status": "SIMULATED",
-                                "order_id": f"SIM-{int(asyncio.get_event_loop().time() * 1000)}",
-                            }
-
-                        # Record trade in persistent database
-                        trade_id = f"TRD-{int(asyncio.get_event_loop().time() * 1000) % 1000000}"
-                        trade_record = {
-                            "id": trade_id,
-                            "symbol": signal.symbol,
-                            "strategy": signal.strategy_name,
-                            "side": signal.action,
-                            "entry_price": signal.entry_price,
-                            "mark_price": signal.entry_price,
-                            "stop_loss": signal.stop_loss,
-                            "take_profit": signal.take_profit,
-                            "quantity": size_res.quantity,
-                            "notional_usdt": size_res.notional_value,
-                            "allocated_risk_usdt": size_res.risk_amount,
-                            "realized_pnl_usdt": 0.0,
-                            "status": "OPEN",
-                            "duration": "1m",
-                            "details": {
-                                "execution": exec_res,
-                                "confluence": confluence.confluence_score,
-                            },
-                        }
-                        await db_manager.save_trade(trade_record)
-
-                        # Broadcast trade opening to Telegram DM & Official Channel
-                        await notifier.notify_trade_opened(
-                            symbol=signal.symbol,
-                            strategy=signal.strategy_name,
-                            side=signal.action,
-                            entry_price=signal.entry_price,
-                            stop_loss=signal.stop_loss,
-                            take_profit=signal.take_profit,
-                            quantity=size_res.quantity,
-                            notional_usdt=size_res.notional_value,
-                            risk_usdt=size_res.risk_amount,
-                        )
-
-            # 3. Dynamic Take-Profit, Stop-Loss & Trailing Stop Evaluation
             for trade in active_trades:
-                if trade.get("symbol") == regime.symbol:
-                    current_price = regime.current_price
-                else:
-                    ticker = await exchange_service.fetch_ticker(trade.get("symbol"))
-                    current_price = float(
-                        ticker.get("last")
-                        or trade.get("mark_price", trade["entry_price"])
-                    )
+                sym = trade["symbol"]
+                ticker = await exchange_service.fetch_ticker(sym)
+                mark_price = float(ticker.get("last") or trade["entry_price"])
 
-                side = trade.get("side", "BUY").upper()
-                tp_price = float(trade.get("take_profit") or 0.0)
-                sl_price = float(trade.get("stop_loss") or 0.0)
-                entry_p = float(trade["entry_price"])
+                # Hitung kondisi TP / SL
+                entry = float(trade["entry_price"])
+                sl = float(trade.get("stop_loss", 0))
+                tp = float(trade.get("take_profit", 0))
                 qty = float(trade["quantity"])
 
-                # Check Take Profit condition
-                is_tp_hit = False
-                if tp_price > 0:
-                    if (
-                        side == "BUY"
-                        and current_price >= tp_price
-                        or side == "SELL"
-                        and current_price <= tp_price
-                    ):
-                        is_tp_hit = True
+                # Cek Take Profit
+                if mark_price >= tp > 0:
+                    profit = round((mark_price - entry) * qty, 2)
+                    await exchange_service.execute_order(sym, "SELL", qty, "market")
+                    await db_manager.close_trade(trade["id"], mark_price, profit)
 
-                # Check Stop Loss condition
-                is_sl_hit = False
-                if sl_price > 0:
-                    if (
-                        side == "BUY"
-                        and current_price <= sl_price
-                        or side == "SELL"
-                        and current_price >= sl_price
-                    ):
-                        is_sl_hit = True
+                    # Waterfall distribution (70% Reinvest, 30% Vault)
+                    if profit > 0:
+                        vault_manager.distribute_trade_profit(profit)
 
-                if is_tp_hit:
-                    side_mult = 1.0 if side == "BUY" else -1.0
-                    realized_pnl = round((current_price - entry_p) * side_mult * qty, 2)
-                    close_side = "SELL" if side == "BUY" else "BUY"
-
-                    logger.info(
-                        "🎯 [TAKE PROFIT TRIGGERED] %s (ID: %s) reached $%.2f (Target: $%.2f) | PnL: +$%.2f USDT",
-                        trade["symbol"],
-                        trade["id"],
-                        current_price,
-                        tp_price,
-                        realized_pnl,
-                    )
-
-                    try:
-                        await exchange_service.execute_order(
-                            symbol=trade["symbol"],
-                            side=close_side,
-                            quantity=qty,
-                            order_type="market",
+                    if notifier:
+                        tp_msg = (
+                            f"🎉 <b>TAKE PROFIT HIT! (+${profit:.2f} USDT)</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 <b>Symbol:</b> #{sym.replace('/', '')}\n"
+                            f"💵 <b>Entry:</b> <code>${entry:,.4f}</code> ➡️ <b>Exit:</b> <code>${mark_price:,.4f}</code>\n"
+                            f"🍯 <b>Distribution:</b> 70% Reinvested (${profit * 0.7:.2f}), 30% Binance Earn Vault (${profit * 0.3:.2f})\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         )
-                    except (
-                        RuntimeError,
-                        ValueError,
-                        OSError,
-                        KeyError,
-                        AttributeError,
-                        CcxtBaseError,
-                    ) as ex:
-                        logger.warning("Exchange close order notification: %s", ex)
-
-                    await db_manager.close_trade(
-                        trade_id=trade["id"],
-                        exit_price=current_price,
-                        realized_pnl=realized_pnl,
-                    )
-
-                    if realized_pnl > 0:
-                        waterfall_res = vault_manager.distribute_trade_profit(
-                            realized_pnl
-                        )
-                        await db_manager.record_vault_distribution(
-                            {
-                                "gross_profit": waterfall_res.gross_profit,
-                                "maintenance_fee": waterfall_res.maintenance_fee,
-                                "reinvest_amount": waterfall_res.reinvest_amount,
-                                "vault_allocation": waterfall_res.vault_allocation,
-                                "total_vault_reserve": waterfall_res.total_accumulated_vault,
-                            }
-                        )
-                        logger.info(
-                            "🍯 [PROFIT WATERFALL HARVESTED] Gross: +$%.2f | Reinvest: +$%.2f | Vault Staked: +$%.2f | Total Vault: $%.2f",
-                            waterfall_res.gross_profit,
-                            waterfall_res.reinvest_amount,
-                            waterfall_res.vault_allocation,
-                            waterfall_res.total_accumulated_vault,
-                        )
-                        await notifier.notify_profit_harvest(
-                            gross_profit=waterfall_res.gross_profit,
-                            maintenance_fee=waterfall_res.maintenance_fee,
-                            reinvest_equity=waterfall_res.reinvest_amount,
-                            vault_deposit=waterfall_res.vault_allocation,
-                            total_vault_balance=waterfall_res.total_accumulated_vault,
-                            symbol=trade["symbol"],
-                            exit_price=current_price,
-                        )
-                    continue
-
-                if is_sl_hit:
-                    side_mult = 1.0 if side == "BUY" else -1.0
-                    realized_pnl = round((current_price - entry_p) * side_mult * qty, 2)
-                    close_side = "SELL" if side == "BUY" else "BUY"
-
-                    logger.warning(
-                        "🛡️ [STOP LOSS TRIGGERED] %s (ID: %s) hit SL at $%.2f (Level: $%.2f) | PnL: $%.2f USDT",
-                        trade["symbol"],
-                        trade["id"],
-                        current_price,
-                        sl_price,
-                        realized_pnl,
-                    )
-
-                    try:
-                        await exchange_service.execute_order(
-                            symbol=trade["symbol"],
-                            side=close_side,
-                            quantity=qty,
-                            order_type="market",
-                        )
-                    except (
-                        RuntimeError,
-                        ValueError,
-                        OSError,
-                        KeyError,
-                        AttributeError,
-                        CcxtBaseError,
-                    ) as ex:
-                        logger.warning("Exchange stop order notification: %s", ex)
-
-                    await db_manager.close_trade(
-                        trade_id=trade["id"],
-                        exit_price=current_price,
-                        realized_pnl=realized_pnl,
-                    )
-
-                    await notifier.notify_stop_loss(
-                        symbol=trade["symbol"],
-                        side=side,
-                        entry_price=entry_p,
-                        exit_price=current_price,
-                        quantity=qty,
-                        realized_pnl=realized_pnl,
-                        reason=f"Price reached protective Stop Loss at ${sl_price:,.2f}",
-                    )
-                    continue
-
-                # Trailing Stop & Break-Even Evaluation
-                high_price = trade.get("highest_price", max(entry_p, current_price))
-                low_price = trade.get("lowest_price", min(entry_p, current_price))
-                trailing_res = trailing_manager.evaluate_position_trailing(
-                    trade_id=trade["id"],
-                    symbol=trade["symbol"],
-                    side=side,
-                    entry_price=entry_p,
-                    initial_sl=sl_price,
-                    current_sl=sl_price,
-                    current_price=current_price,
-                    highest_price=high_price,
-                    lowest_price=low_price,
-                    atr=entry_p * 0.015,
-                )
-                if (
-                    trailing_res.is_breakeven_activated
-                    or trailing_res.is_trailing_stepped
-                ):
-                    if trailing_res.new_sl != sl_price:
-                        await db_manager.update_trade_sl(
-                            trade["id"], trailing_res.new_sl
-                        )
-                        trade["stop_loss"] = trailing_res.new_sl
-                        logger.info(
-                            "⚡ [TRAILING STOP ADJUSTED] %s: %s",
-                            trade["id"],
-                            trailing_res.message,
+                        await notifier.send_telegram_message(
+                            tp_msg, broadcast_to_channel=True
                         )
 
-            # 4. Spatial Arbitrage Cross-Exchange Scan
-            quotes = await arbitrage_scanner.fetch_live_quotes("ETH/USDT")
-            arb_signals = arbitrage_scanner.scan_cross_exchange("ETH/USDT", quotes)
-            for arb in arb_signals:
-                if arb.net_spread_pct >= (settings.MIN_ARBITRAGE_SPREAD_PCT * 100.0):
-                    logger.info(
-                        "SPATIAL ARBITRAGE DETECTED: Buy %s ($%s) -> Sell %s ($%s) | Net Spread: %.2f%%",
-                        arb.buy_exchange,
-                        f"{arb.buy_price:.2f}",
-                        arb.sell_exchange,
-                        f"{arb.sell_price:.2f}",
-                        arb.net_spread_pct,
-                    )
-
-            # 5. Delta-Neutral Cash-and-Carry Funding Rate Check
-            if iteration % 12 == 0:
-                funding_opps = funding_engine.scan_funding_rates()
-                for opp in funding_opps:
-                    if opp.annualized_apr_pct >= 12.0:
-                        logger.info(
-                            "Funding Yield Opportunity: %s at %.2f%% APR on %s",
-                            opp.symbol,
-                            opp.annualized_apr_pct,
-                            opp.exchange,
+                # Cek Stop Loss Protektif
+                elif mark_price <= sl and sl > 0:
+                    loss = round((mark_price - entry) * qty, 2)
+                    await exchange_service.execute_order(sym, "SELL", qty, "market")
+                    await db_manager.close_trade(trade["id"], mark_price, loss)
+                    if notifier:
+                        sl_msg = (
+                            f"🛡️ <b>STOP LOSS EXECUTED (CAPITAL PROTECTED)</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 <b>Symbol:</b> #{sym.replace('/', '')}\n"
+                            f"💵 <b>Entry:</b> <code>${entry:,.4f}</code> ➡️ <b>Exit:</b> <code>${mark_price:,.4f}</code>\n"
+                            f"📉 <b>PnL:</b> <code>-${abs(loss):.2f} USDT</code>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        await notifier.send_telegram_message(
+                            sl_msg, broadcast_to_channel=True
                         )
 
-            # 6. Vault Auto-Sweep Check
-            if vault_manager.total_vault_reserve >= 10.0:
-                sweep = await vault_manager.execute_auto_vault_sweep(
-                    binance_client=getattr(exchange_service, "binance", None)
-                )
-                if sweep.status == "SUCCESS":
-                    await notifier.notify_vault_staked(
-                        product_type=sweep.product_type,
-                        amount=sweep.amount,
-                        tenure=sweep.tenure_days,
-                    )
+        except (RuntimeError, ValueError, KeyError, TypeError, OSError) as err:
+            logger.warning(f"Engine loop handled error: {err}")
+        except Exception as err:  # noqa: BLE001
+            logger.error(f"Engine loop unexpected error: {err}")
 
-            # Sleep between scan cycles (5 seconds)
-            await asyncio.sleep(5)
-
-        except asyncio.CancelledError:
-            logger.info("Autonomous trading engine task cancelled.")
-            break
-        except Exception:
-            logger.exception("Error in autonomous engine loop")
-            await asyncio.sleep(5)
+        await asyncio.sleep(5)

@@ -8,8 +8,11 @@ import {
   AlertTriangle,
   RotateCcw,
   Vault,
+  Zap,
   Cpu,
+  Info,
   Layers,
+  Server,
 } from "lucide-react";
 
 export default function TelegramChatOpsView() {
@@ -98,7 +101,7 @@ export default function TelegramChatOpsView() {
     <div className="space-y-6">
       {/* Header Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-80 h-full bg-gradient-to-l from-sky-500/10 to-transparent pointer-events-none" />
+        <div className="absolute right-0 top-0 w-80 h-full bg-linear-to-l from-sky-500/10 to-transparent pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
