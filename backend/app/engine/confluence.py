@@ -1,16 +1,16 @@
 """
 Multi-Timeframe Confluence & Macro Trend Filter.
 Combines higher timeframe (4H / 1D) structural bias with lower timeframe (15M / 1H) execution triggers.
-Prevents counter-trend whipsaws and false breakouts by requiring:
-1. Macro EMA 200 trend alignment (Bullish if Macro Price > EMA 200, Bearish if Macro Price < EMA 200)
-2. Macro Momentum Confirmation (MACD Histogram > 0 or RSI > 50 for longs)
-3. Confluence Score calculation (0 - 100%)
+Strategy-Aware:
+- Evaluates trend momentum for Breakouts.
+- Evaluates prime oversold pullbacks for Mean-Reversion Dips.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 try:
     import numpy as np
@@ -45,7 +45,7 @@ class MultiTimeframeConfluenceEngine:
     def __init__(self, min_confluence_threshold: float = 50.0):
         self.min_confluence_threshold = min_confluence_threshold
 
-    def compute_ema(self, series: pd.Series, period: int) -> pd.Series:
+    def compute_ema(self, series: Any, period: int) -> Any:
         return series.ewm(span=period, adjust=False).mean()
 
     def evaluate_macro_confluence(
@@ -54,17 +54,19 @@ class MultiTimeframeConfluenceEngine:
         proposed_action: str,  # "BUY" | "SELL"
         current_price: float,
         macro_ohlcv: list[list[float]],
+        strategy_name: str | None = None,
     ) -> ConfluenceFilterResult:
         """
-        Parses 4H/1D OHLCV series and evaluates trend alignment.
+        Parses OHLCV series and evaluates trend alignment with strategy awareness.
+        Supports both Breakout Momentum and Mean-Reversion Dip Accumulation.
         """
         if not HAS_PANDAS or not macro_ohlcv or len(macro_ohlcv) < 30:
-            # Not enough historical macro bars: allow with neutral score
+            # Not enough historical macro bars: allow with neutral high conviction score
             return ConfluenceFilterResult(
                 symbol=symbol,
                 proposed_action=proposed_action,
                 is_approved=True,
-                confluence_score=75.0,
+                confluence_score=78.0,
                 macro_trend="NEUTRAL",
                 macro_ema_200=current_price * 0.98,
                 current_price=current_price,
@@ -78,7 +80,7 @@ class MultiTimeframeConfluenceEngine:
         macro_price = float(close.iloc[-1])
 
         # Indicators on macro timeframe
-        ema_50 = float(self.compute_ema(close, 50).iloc[-1])
+        ema_50 = float(self.compute_ema(close, min(50, len(close))).iloc[-1])
         ema_200 = float(self.compute_ema(close, min(200, len(close))).iloc[-1])
 
         # Momentum RSI 14
@@ -87,8 +89,12 @@ class MultiTimeframeConfluenceEngine:
         loss = (-delta.clip(upper=0)).ewm(alpha=1.0 / 14, adjust=False).mean()
         macro_rsi = float((100 - (100 / (1 + (gain / (loss + 1e-9))))).iloc[-1])
 
-        # Determine macro regime
-        score = 50.0
+        is_mean_reversion = bool(
+            strategy_name and "MEAN_REVERSION" in strategy_name.upper()
+        )
+
+        # Determine macro regime score
+        score = 55.0
         if macro_price > ema_200 and ema_50 > ema_200:
             macro_trend = "STRONG_BULLISH"
             score += 25.0
@@ -97,15 +103,26 @@ class MultiTimeframeConfluenceEngine:
             score += 15.0
         elif macro_price < ema_200 and ema_50 < ema_200:
             macro_trend = "STRONG_BEARISH"
-            score -= 25.0
+            score -= 15.0 if not is_mean_reversion else 5.0
         else:
             macro_trend = "BEARISH"
-            score -= 15.0
+            score -= 10.0 if not is_mean_reversion else 0.0
 
-        if macro_rsi > 50.0:
-            score += 10.0
+        # RSI Evaluation: Strategy-Aware
+        if is_mean_reversion:
+            # In Mean-Reversion dip, oversold RSI (<= 44) is the desired entry condition!
+            if macro_rsi <= 44.0:
+                score += 25.0  # Prime discount accumulation setup
+            elif macro_rsi <= 50.0:
+                score += 15.0
+            else:
+                score -= 10.0
         else:
-            score -= 10.0
+            # In Breakout Momentum, RSI > 50 confirms trend strength
+            if macro_rsi > 50.0:
+                score += 15.0
+            else:
+                score -= 15.0
 
         score = max(0.0, min(100.0, score))
 

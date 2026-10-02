@@ -1,10 +1,10 @@
 """
 Multi-Strategy Quantitative Engine for MONEY For HONEY.
-Optimized Precision Edge:
-1. Breakout Momentum (ADX > 25 & Clean Donchian Breakout + Volume Confluence).
-2. Statistical Mean-Reversion (ADX < 22 & Strict Lower Bollinger Dip + RSI <= 38.0).
-3. Dynamic ATR-based Stop Loss (1.8x - 2.2x ATR) with Minimum 1.2% Noise Cushion.
-4. Institutional Risk-to-Reward Target (1:2.0 - 1:2.8).
+STRICT SPOT LONG-ONLY ACCUMULATION ENGINE:
+1. Dynamic Breakout Momentum (BUY Only when ADX > 25 & Bullish Breakout).
+2. Statistical Mean-Reversion (BUY Only at Lower Band Dip & RSI <= 44.0).
+3. ZERO Naked Shorting (Eliminates counter-trend short losses on Binance Spot).
+4. Dynamic 2.0x ATR Stop Loss & 1:2.2 Take Profit.
 """
 
 import logging
@@ -20,7 +20,7 @@ logger = logging.getLogger("money_for_honey.strategy")
 class TradeSignal:
     strategy_name: str
     symbol: str
-    action: str  # "BUY" | "SELL" | "HOLD"
+    action: str  # "BUY" | "HOLD" (No naked SELL on Spot)
     entry_price: float
     stop_loss: float
     take_profit: float
@@ -31,94 +31,59 @@ class TradeSignal:
 
 
 class MultiStrategyEngine:
-    """Evaluates market regimes and fires high-conviction quantitative trading signals."""
+    """Evaluates market regimes and fires high-conviction quantitative SPOT LONG trading signals."""
 
     def __init__(
         self,
-        atr_multiplier_sl: float = 2.0,  # 2.0x ATR: Menghindari tersapu wick market
-        risk_reward_target: float = 2.2,  # R:R 1:2.2 (1 Win menutup 2.2x Loss)
-        min_sl_distance_pct: float = 0.012,  # Minimum 1.2% SL floor untuk BTC/Crypto
+        atr_multiplier_sl: float = 2.0,  # 2.0x ATR buffer
+        risk_reward_target: float = 2.2,  # R:R 1:2.2 Target
+        min_sl_distance_pct: float = 0.015,  # Minimum 1.5% SL floor
     ):
         self.atr_multiplier_sl = atr_multiplier_sl
         self.risk_reward_target = risk_reward_target
         self.min_sl_distance_pct = min_sl_distance_pct
 
     def _calculate_protective_stops(
-        self, entry: float, atr: float, side: str = "BUY"
+        self, entry: float, atr: float
     ) -> tuple[float, float, float]:
-        """
-        Menghitung Stop Loss dan Take Profit yang presisi.
-        Menjamin jarak SL memiliki 'ruang bernapas' minimal 1.2% - 2.0% dari entry.
-        """
+        """Menghitung level SL dan TP presisi khusus posisi BUY (Spot Long)."""
         raw_sl_dist = max(
             atr * self.atr_multiplier_sl, entry * self.min_sl_distance_pct
         )
-
-        if side == "BUY":
-            sl = entry - raw_sl_dist
-            tp = entry + (raw_sl_dist * self.risk_reward_target)
-        else:
-            sl = entry + raw_sl_dist
-            tp = entry - (raw_sl_dist * self.risk_reward_target)
-
-        rr = abs(tp - entry) / max(1e-6, abs(entry - sl))
-        return round(sl, 4), round(tp, 4), round(rr, 2)
+        sl = round(entry - raw_sl_dist, 4)
+        tp = round(entry + (raw_sl_dist * self.risk_reward_target), 4)
+        rr = round(abs(tp - entry) / max(1e-6, abs(entry - sl)), 2)
+        return sl, tp, rr
 
     def evaluate_breakout(self, regime: MarketRegime) -> TradeSignal | None:
         """
-        Strategi Tren Kuat (ADX > 25):
-        LONG hanya jika Donchian High ditembus DAN RSI belum overbought (< 72).
+        Strategi Momentum Tren (ADX > 25):
+        HANYA EKSEKUSI BUY ketika harga menembus Donchian High dalam tren Bullish.
+        (Menolak semua sinyal breakdown Short agar tidak melawan tren).
         """
         if regime.adx < 25.0:
             return None
 
-        # Long Breakout Momentum
+        # PURE LONG BREAKOUT
         if (
             regime.current_price >= regime.donchian_high_20
             and regime.trend_direction == "BULLISH"
-            and regime.rsi_14 < 72.0  # Mencegah beli di pucuk overbought
+            and regime.rsi_14 < 70.0  # Tidak beli jika sudah overbought parah
         ):
             entry = regime.current_price
-            sl, tp, rr = self._calculate_protective_stops(entry, regime.atr, side="BUY")
+            sl, tp, rr = self._calculate_protective_stops(entry, regime.atr)
 
             return TradeSignal(
-                strategy_name="DYNAMIC_BREAKOUT_MOMENTUM",
+                strategy_name="SPOT_BREAKOUT_MOMENTUM",
                 symbol=regime.symbol,
                 action="BUY",
                 entry_price=round(entry, 4),
                 stop_loss=sl,
                 take_profit=tp,
                 risk_reward_ratio=rr,
-                confidence_score=round(min(0.96, 0.70 + (regime.adx / 100.0)), 2),
+                confidence_score=round(min(0.96, 0.75 + (regime.adx / 100.0)), 2),
                 rationale=(
-                    f"Bullish Donchian Breakout at ${regime.donchian_high_20:.2f} | "
-                    f"ADX={regime.adx:.1f} (Strong Trend) | RSI={regime.rsi_14:.1f}"
-                ),
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
-
-        # Short Breakout Momentum
-        if (
-            regime.current_price <= regime.donchian_low_20
-            and regime.trend_direction == "BEARISH"
-            and regime.rsi_14 > 28.0  # Mencegah sell di dasar oversold
-        ):
-            entry = regime.current_price
-            sl, tp, rr = self._calculate_protective_stops(
-                entry, regime.atr, side="SELL"
-            )
-
-            return TradeSignal(
-                strategy_name="DYNAMIC_BREAKOUT_MOMENTUM",
-                symbol=regime.symbol,
-                action="SELL",
-                entry_price=round(entry, 4),
-                stop_loss=sl,
-                take_profit=tp,
-                risk_reward_ratio=rr,
-                confidence_score=round(min(0.96, 0.70 + (regime.adx / 100.0)), 2),
-                rationale=(
-                    f"Bearish Donchian Breakdown at ${regime.donchian_low_20:.2f} | "
+                    f"Bullish Breakout at ${regime.donchian_high_20:.2f} | "
                     f"ADX={regime.adx:.1f} (Strong Trend) | RSI={regime.rsi_14:.1f}"
                 ),
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -129,30 +94,26 @@ class MultiStrategyEngine:
     def evaluate_mean_reversion(self, regime: MarketRegime) -> TradeSignal | None:
         """
         Strategi Sideways / Ranging (ADX < 24):
-        LONG HANYA KETIKA:
-        1. Harga menyentuh / di bawah area Lower Bollinger Band (Beli Murah di Bawah).
-        2. RSI menunjukkan Oversold / Pullback Sehat (RSI <= 38.0).
+        HANYA EKSEKUSI BUY di area lembah diskon (Lower 35% BB Band & RSI <= 44.0).
         """
         if regime.adx >= 24.0:
             return None
 
-        # Hitung area pantulan bawah (Lower Band + buffer 0.25%)
-        lower_threshold = regime.lower_bollinger * 1.0025
+        # Definisi area lembah: sepertiga bawah rentang Bollinger Bands
+        band_width = regime.upper_bollinger - regime.lower_bollinger
+        lower_zone = regime.lower_bollinger + (band_width * 0.35)
 
-        # LONG HANYA DI LEMBAH (DIP ACCUMULATION)
-        if regime.current_price <= lower_threshold and regime.rsi_14 <= 38.0:
+        # PURE DIP ACCUMULATION (BUY LOW ON PULLBACK)
+        if regime.current_price <= lower_zone and regime.rsi_14 <= 44.0:
             entry = regime.current_price
-            sl, tp_candidate, rr = self._calculate_protective_stops(
-                entry, regime.atr, side="BUY"
-            )
+            sl, tp_candidate, rr = self._calculate_protective_stops(entry, regime.atr)
 
-            # Target Take Profit: Menuju Mid Band atau Upper Band
             mid_band = (regime.upper_bollinger + regime.lower_bollinger) / 2.0
-            tp = round(max(tp_candidate, mid_band * 1.005), 4)
+            tp = round(max(tp_candidate, mid_band * 1.008), 4)
             rr = round(abs(tp - entry) / max(1e-6, abs(entry - sl)), 2)
 
             return TradeSignal(
-                strategy_name="STATISTICAL_MEAN_REVERSION",
+                strategy_name="SPOT_MEAN_REVERSION_DIP",
                 symbol=regime.symbol,
                 action="BUY",
                 entry_price=round(entry, 4),
@@ -160,51 +121,26 @@ class MultiStrategyEngine:
                 take_profit=tp,
                 risk_reward_ratio=rr,
                 confidence_score=round(
-                    min(0.95, 0.80 + ((38.0 - regime.rsi_14) / 50.0)), 2
+                    min(0.95, 0.80 + ((44.0 - regime.rsi_14) / 50.0)), 2
                 ),
                 rationale=(
-                    f"Statistical Lower Band Dip at ${entry:.2f} | "
-                    f"RSI={regime.rsi_14:.1f} (Oversold Bounce) | Target Mid/Upper Band"
+                    f"Oversold Dip at ${entry:.2f} | "
+                    f"RSI={regime.rsi_14:.1f} (<= 44.0) | Lower BB Pullback Setup"
                 ),
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        return None
-
-    def evaluate_micro_scalping(
-        self, regime: MarketRegime, bid_ask_spread_pct: float
-    ) -> TradeSignal | None:
-        """
-        Transisi / Konsolidasi:
-        Hanya masuk jika RSI sangat oversold (RSI <= 32) dengan proteksi ketat.
-        """
-        if regime.rsi_14 <= 32.0:
-            entry = regime.current_price
-            sl, tp, rr = self._calculate_protective_stops(entry, regime.atr, side="BUY")
-            return TradeSignal(
-                strategy_name="DYNAMIC_RANGE_ACCUMULATOR",
-                symbol=regime.symbol,
-                action="BUY",
-                entry_price=round(entry, 4),
-                stop_loss=sl,
-                take_profit=tp,
-                risk_reward_ratio=rr,
-                confidence_score=0.78,
-                rationale=f"Deep oversold pullback capture at ${entry:.2f} with RSI={regime.rsi_14:.1f}",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            )
         return None
 
     def generate_signal(
         self, regime: MarketRegime, spread_pct: float = 0.0002
     ) -> TradeSignal | None:
-        """Evaluates quantitative modules in order of strict statistical edge."""
+        """Hanya memproduksi sinyal BUY berprobabilitas tinggi."""
         if regime.regime == "BREAKOUT":
             return self.evaluate_breakout(regime)
         elif regime.regime == "MEAN_REVERSION":
             return self.evaluate_mean_reversion(regime)
-        else:
-            return self.evaluate_micro_scalping(regime, spread_pct)
+        return None
 
 
 strategy_engine = MultiStrategyEngine()
