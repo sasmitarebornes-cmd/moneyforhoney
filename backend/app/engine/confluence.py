@@ -1,9 +1,10 @@
 """
 Multi-Timeframe Confluence & Macro Trend Filter.
 Combines higher timeframe (4H / 1D) structural bias with lower timeframe (15M / 1H) execution triggers.
-Strategy-Aware:
-- Evaluates trend momentum for Breakouts.
-- Evaluates prime oversold pullbacks for Mean-Reversion Dips.
+Prevents counter-trend whipsaws and false breakouts by requiring:
+1. Macro EMA 200 trend alignment (Bullish if Macro Price > EMA 200, Bearish if Macro Price < EMA 200)
+2. Macro Momentum Confirmation (MACD Histogram > 0 or RSI > 50 for longs)
+3. Confluence Score calculation (0 - 100%)
 """
 
 from __future__ import annotations
@@ -89,8 +90,12 @@ class MultiTimeframeConfluenceEngine:
         loss = (-delta.clip(upper=0)).ewm(alpha=1.0 / 14, adjust=False).mean()
         macro_rsi = float((100 - (100 / (1 + (gain / (loss + 1e-9))))).iloc[-1])
 
-        is_mean_reversion = bool(
-            strategy_name and "MEAN_REVERSION" in strategy_name.upper()
+        is_dip_strategy = bool(
+            strategy_name
+            and any(
+                k in strategy_name.upper()
+                for k in ("MEAN_REVERSION", "CAPITULATION", "DIP")
+            )
         )
 
         # Determine macro regime score
@@ -103,15 +108,19 @@ class MultiTimeframeConfluenceEngine:
             score += 15.0
         elif macro_price < ema_200 and ema_50 < ema_200:
             macro_trend = "STRONG_BEARISH"
-            score -= 15.0 if not is_mean_reversion else 5.0
+            score -= (
+                15.0 if not is_dip_strategy else 0.0
+            )  # Dip hunter thrives on bearish oversold capitulation!
         else:
             macro_trend = "BEARISH"
-            score -= 10.0 if not is_mean_reversion else 0.0
+            score -= 10.0 if not is_dip_strategy else 0.0
 
         # RSI Evaluation: Strategy-Aware
-        if is_mean_reversion:
-            # In Mean-Reversion dip, oversold RSI (<= 44) is the desired entry condition!
-            if macro_rsi <= 44.0:
+        if is_dip_strategy:
+            # In Capitulation or Mean-Reversion dip, oversold RSI (<= 32 or <= 44) is prime entry!
+            if macro_rsi <= 32.0:
+                score += 35.0  # Highest conviction capitulation bounce setup
+            elif macro_rsi <= 44.0:
                 score += 25.0  # Prime discount accumulation setup
             elif macro_rsi <= 50.0:
                 score += 15.0
