@@ -14,7 +14,11 @@ except ImportError:
         from pydantic import BaseSettings, Field  # type: ignore[no-redef]
     except ImportError:
 
-        def Field(default: Any = None, **kwargs: Any) -> Any:  # type: ignore[misc]
+        def Field(
+            default: Any = None, default_factory: Any = None, **kwargs: Any
+        ) -> Any:  # type: ignore[misc]
+            if default_factory is not None and callable(default_factory):
+                return default_factory()
             return default
 
         class BaseSettings:  # type: ignore[no-redef]
@@ -33,7 +37,7 @@ except ImportError:
                                     setattr(self, k, val_type(env_val))
                                 else:
                                     setattr(self, k, env_val)
-                            except Exception:
+                            except (ValueError, TypeError):
                                 setattr(self, k, env_val)
                         else:
                             setattr(self, k, v)
@@ -89,7 +93,7 @@ class Settings(BaseSettings):
         default=0.30, description="Max 30% total equity per position"
     )
     MIN_BINANCE_ORDER_USDT: float = Field(
-        default=10.0, description="Binance spot minimum order notional"
+        default=5.0, description="Binance spot minimum order notional"
     )
     SLIPPAGE_TOLERANCE_PCT: float = Field(
         default=0.0005, description="0.05% max allowed slippage"
@@ -113,14 +117,17 @@ class Settings(BaseSettings):
     MIN_ARBITRAGE_SPREAD_PCT: float = Field(
         default=0.006, description="0.6% minimum net profit spread"
     )
-    ARBITRAGE_SYMBOLS: list[str] = [
-        "BTC/USDT",
-        "ETH/USDT",
-        "SOL/USDT",
-        "BNB/USDT",
-        "XRP/USDT",
-        "AVAX/USDT",
-    ]
+    ARBITRAGE_SYMBOLS: list[str] = Field(
+        default_factory=lambda: [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "BNB/USDT",
+            "XRP/USDT",
+            "AVAX/USDT",
+        ],
+        description="Supported trading pairs for spatial arbitrage",
+    )
 
     # Notifications
     TELEGRAM_BOT_TOKEN: str | None = None

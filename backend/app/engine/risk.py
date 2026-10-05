@@ -166,27 +166,37 @@ class RiskManager:
         notional_value = quantity * entry_price
         max_allowed_notional = equity * self.max_allocation_pct
 
-        # 3. Cap max position allocation at 30% total equity
+        # 3. Dynamic Position Cap:
+        # For micro-capital accounts (equity < 35.0 USDT), allow single-bullet allocation (up to 95% of equity)
+        # to satisfy Binance's minimum notional requirement ($5.00 USDT).
+        # For accounts >= 35.0 USDT, enforce standard 30% max allocation per position.
+        effective_max_alloc = 0.95 if equity < 35.0 else self.max_allocation_pct
+        max_allowed_notional = equity * effective_max_alloc
+
         if notional_value > max_allowed_notional:
             logger.info(
                 f"Notional ${notional_value:.2f} exceeded max allocation "
-                f"${max_allowed_notional:.2f} (30%). Clamping quantity."
+                f"${max_allowed_notional:.2f} ({effective_max_alloc * 100:.0f}%). Clamping quantity."
             )
             notional_value = max_allowed_notional
             quantity = notional_value / entry_price
             risk_budget = quantity * sl_distance
 
-        # 4. Small Capital Guard (< $500) & Binance $10 minimum notional check
-        if notional_value < self.min_binance_notional:
-            # Special case for micro-accounts ($10.5 - $100): allow minimum $10.50 notional order on Binance Spot
-            if equity >= self.min_binance_notional:
-                required_qty = self.min_binance_notional / entry_price
+        # 4. Small Capital Guard & Binance minimum notional check ($5.00 floor)
+        binance_min_floor = min(self.min_binance_notional, 5.0)
+        if notional_value < binance_min_floor:
+            # Special case for micro-accounts: allocate safe equity (up to 95%) to meet Binance minimum
+            if equity >= binance_min_floor:
+                target_notional = min(
+                    equity * 0.95, max(binance_min_floor, equity * 0.90)
+                )
+                required_qty = target_notional / entry_price
                 implied_risk = required_qty * sl_distance
                 quantity = required_qty
-                notional_value = self.min_binance_notional
+                notional_value = target_notional
                 risk_budget = implied_risk
                 logger.info(
-                    f"Micro-cap sizing applied for {symbol}: Raised notional to ${self.min_binance_notional:.2f} "
+                    f"Micro-cap sizing applied for {symbol}: Sized order to ${notional_value:.2f} "
                     f"to fulfill Binance minimum lot size (Allocation: {(notional_value / equity) * 100:.1f}%)"
                 )
             else:
@@ -201,7 +211,7 @@ class RiskManager:
                     allocation_pct=0.0,
                     reason=(
                         f"REJECTED: Account equity ${equity:.2f} is below Binance minimum required order "
-                        f"of ${self.min_binance_notional:.2f}."
+                        f"of ${binance_min_floor:.2f}."
                     ),
                 )
 
