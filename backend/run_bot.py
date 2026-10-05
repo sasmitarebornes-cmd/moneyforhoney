@@ -459,11 +459,21 @@ class TelegramPollingRunner:
         elif cmd in ["/balance", "/wallet"]:
             usdt_total = 17.1165
             usdt_free = 17.1165
+            crypto_assets = []
             if exchange_service:
                 try:
                     bal = await exchange_service.fetch_account_balance()
                     usdt_total = float(bal.get("total") or 17.1165)
                     usdt_free = float(bal.get("free") or 17.1165)
+                    assets_dict = bal.get("assets", {})
+                    for symbol, val in assets_dict.items():
+                        if symbol.upper() == "USDT":
+                            continue
+                        qty = float(val.get("total") or val.get("free") or 0.0)
+                        if qty > 0.00001:
+                            crypto_assets.append(
+                                f"• <b>{symbol}:</b> <code>{qty:,.6f}</code>"
+                            )
                 except (
                     RuntimeError,
                     ValueError,
@@ -475,11 +485,20 @@ class TelegramPollingRunner:
                 ) as err:
                     logger.debug("Live balance fetch exception: %s", err)
 
+            crypto_section = ""
+            if crypto_assets:
+                crypto_section = (
+                    "\n💼 <b>Holding Crypto Assets:</b>\n"
+                    + "\n".join(crypto_assets)
+                    + "\n"
+                )
+
             text = (
                 "💰 <b>BINANCE SPOT WALLET BALANCE (LIVE)</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💵 <b>USDT Free:</b> <code>${usdt_free:,.4f} USDT</code>\n"
-                f"📊 <b>Total Equity:</b> <code>${usdt_total:,.4f} USDT</code>\n\n"
+                f"💵 <b>USDT Cash:</b> <code>${usdt_free:,.4f} USDT</code>\n"
+                f"📊 <b>Total USDT:</b> <code>${usdt_total:,.4f} USDT</code>\n"
+                f"{crypto_section}\n"
                 "⚡ <b>Engine Sizing Mode:</b> <code>$10.00 Minimum Floor</code>\n"
                 "🛡️ <b>Status:</b> 🟢 Live Connected to Binance Spot\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

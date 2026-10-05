@@ -19,6 +19,12 @@ try:
     import httpx
 except (ImportError, ModuleNotFoundError):
     httpx = None  # type: ignore[assignment]
+try:
+    import ccxt
+
+    CcxtBaseError: type[Exception] = ccxt.BaseError
+except (ImportError, ModuleNotFoundError):
+    CcxtBaseError = RuntimeError  # type: ignore[assignment]
 
 from app.core.config import settings
 from app.db.database import db_manager
@@ -320,19 +326,46 @@ class TelegramChatOpsManager:
             markup = TelegramKeyboards.main_menu()
 
         elif cmd in ["/balance", "/wallet"]:
+            crypto_assets = []
             try:
                 bal = await exchange_service.fetch_account_balance()
                 usdt_total = bal.get("total", 17.1165)
                 usdt_free = bal.get("free", 17.1165)
-            except Exception:
+                assets_dict = bal.get("assets", {})
+                for symbol, val in assets_dict.items():
+                    if symbol.upper() == "USDT":
+                        continue
+                    qty = float(val.get("total") or val.get("free") or 0.0)
+                    if qty > 0.00001:
+                        crypto_assets.append(
+                            f"• <b>{symbol}:</b> <code>{qty:,.6f}</code>"
+                        )
+            except (
+                RuntimeError,
+                ValueError,
+                OSError,
+                KeyError,
+                AttributeError,
+                TypeError,
+                CcxtBaseError,
+            ):
                 usdt_total = 17.1165
                 usdt_free = 17.1165
+
+            crypto_section = ""
+            if crypto_assets:
+                crypto_section = (
+                    "\n💼 <b>Holding Crypto Assets:</b>\n"
+                    + "\n".join(crypto_assets)
+                    + "\n"
+                )
 
             response = (
                 "💰 <b>BINANCE SPOT WALLET BALANCE</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💵 <b>USDT Free:</b> <code>${usdt_free:,.4f} USDT</code>\n"
-                f"📊 <b>Total Equity:</b> <code>${usdt_total:,.4f} USDT</code>\n\n"
+                f"💵 <b>USDT Cash:</b> <code>${usdt_free:,.4f} USDT</code>\n"
+                f"📊 <b>Total USDT:</b> <code>${usdt_total:,.4f} USDT</code>\n"
+                f"{crypto_section}\n"
                 "⚡ <b>Engine Sizing Mode:</b> <code>$10.00 Minimum Floor</code>\n"
                 "🛡️ <b>Status:</b> Standby & Ready for signal allocation.\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -442,7 +475,15 @@ class TelegramChatOpsManager:
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                     "🟢 <b>Status:</b> Autonomous Scanner is actively polling Binance Spot."
                 )
-            except Exception as ex:
+            except (
+                RuntimeError,
+                ValueError,
+                OSError,
+                KeyError,
+                AttributeError,
+                TypeError,
+                CcxtBaseError,
+            ) as ex:
                 response = (
                     "⚡ <b>MONEY For HONEY — Alpha Radar Scanner</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -545,7 +586,15 @@ class TelegramChatOpsManager:
                         quantity=qty,
                         order_type="market",
                     )
-                except Exception as ex:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    AttributeError,
+                    TypeError,
+                    CcxtBaseError,
+                ) as ex:
                     logger.warning(
                         "Exchange close order exception for %s: %s", t["id"], ex
                     )
