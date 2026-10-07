@@ -7,12 +7,14 @@ How to run:
     python run_bot.py
 """
 
+# Standard library
 import asyncio
 import logging
 import os
 import sys
 from typing import Any
 
+# Third-party
 import httpx
 from dotenv import load_dotenv
 
@@ -60,7 +62,7 @@ class StandaloneKeyboards:
                     {"text": "📊 Live Telemetry", "callback_data": "/status"},
                 ],
                 [
-                    {"text": "📈 Active Trades", "callback_data": "/positions"},
+                    {"text": " Active Trades", "callback_data": "/positions"},
                     {"text": "🎯 Take Profit Logs", "callback_data": "/tp"},
                 ],
                 [
@@ -74,7 +76,7 @@ class StandaloneKeyboards:
                 [
                     {"text": "✅ Resume Engine", "callback_data": "/resume"},
                     {
-                        "text": "🚨 Emergency Stop",
+                        "text": " Emergency Stop",
                         "callback_data": "/confirm_emergency_stop",
                     },
                 ],
@@ -96,7 +98,7 @@ class StandaloneKeyboards:
                     {"text": "📊 Telemetry", "callback_data": "/status"},
                 ],
                 [
-                    {"text": "📈 Active Trades", "callback_data": "/positions"},
+                    {"text": " Active Trades", "callback_data": "/positions"},
                     {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
@@ -108,10 +110,10 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Telemetry", "callback_data": "/status"},
-                    {"text": "📈 View Positions", "callback_data": "/positions"},
+                    {"text": " View Positions", "callback_data": "/positions"},
                 ],
                 [
-                    {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
+                    {"text": " Broadcast to Channel", "callback_data": "/broadcast"},
                     {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
@@ -123,11 +125,11 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Positions", "callback_data": "/positions"},
-                    {"text": "🛑 Liquidate All", "callback_data": "/confirm_close_all"},
+                    {"text": " Liquidate All", "callback_data": "/confirm_close_all"},
                 ],
                 [
                     {"text": "📊 Live Telemetry", "callback_data": "/status"},
-                    {"text": "🏠 Main Menu", "callback_data": "/menu"},
+                    {"text": " Main Menu", "callback_data": "/menu"},
                 ],
             ]
         }
@@ -138,7 +140,7 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {
-                        "text": "🚨 CONFIRM EMERGENCY STOP",
+                        "text": " CONFIRM EMERGENCY STOP",
                         "callback_data": "/emergency_stop",
                     },
                 ],
@@ -156,10 +158,7 @@ class StandaloneKeyboards:
                     {"text": "🛑 CONFIRM LIQUIDATE ALL", "callback_data": "/close_all"},
                 ],
                 [
-                    {
-                        "text": "❌ Cancel & Keep Positions",
-                        "callback_data": "/positions",
-                    },
+                    {"text": " Cancel & Keep Positions", "callback_data": "/positions"},
                 ],
             ]
         }
@@ -169,7 +168,7 @@ class StandaloneKeyboards:
         return {
             "inline_keyboard": [
                 [
-                    {"text": "📊 Telemetry Status", "callback_data": "/status"},
+                    {"text": " Telemetry Status", "callback_data": "/status"},
                     {"text": "🏠 Main Dashboard", "callback_data": "/menu"},
                 ]
             ]
@@ -239,11 +238,11 @@ class TelegramPollingRunner:
                 {"command": "status", "description": "📊 Live Quantitative Telemetry"},
                 {
                     "command": "positions",
-                    "description": "📈 Active Trades & SL/TP Tracker",
+                    "description": " Active Trades & SL/TP Tracker",
                 },
                 {
                     "command": "tp",
-                    "description": "🎯 Take Profit & Closed Trades History",
+                    "description": " Take Profit & Closed Trades History",
                 },
                 {"command": "history", "description": "📜 Completed Trades Ledger"},
                 {
@@ -256,7 +255,7 @@ class TelegramPollingRunner:
                 },
                 {
                     "command": "radar",
-                    "description": "⚡ Alpha & Confluence Radar Signals",
+                    "description": " Alpha & Confluence Radar Signals",
                 },
                 {"command": "help", "description": "📖 Operator Manual & Guide"},
                 {
@@ -347,7 +346,7 @@ class TelegramPollingRunner:
         self,
         client: httpx.AsyncClient,
         callback_query_id: str,
-        text: str = "⚡ Executing...",
+        text: str = " Executing...",
     ) -> bool:
         """Dismisses Telegram loading spinner when an inline button is clicked."""
         url = f"{self.api_base}/answerCallbackQuery"
@@ -555,7 +554,7 @@ class TelegramPollingRunner:
                 ]
                 for idx, t in enumerate(active_trades[:6], start=1):
                     side_emoji = (
-                        "🟢 LONG" if t.get("side", "").upper() == "BUY" else "🔴 SHORT"
+                        "🟢 LONG" if t.get("side", "").upper() == "BUY" else " SHORT"
                     )
                     lines.append(
                         f"{idx}. <b>{t['symbol']}</b> | {side_emoji}\n"
@@ -581,9 +580,9 @@ class TelegramPollingRunner:
 
             if not closed_trades:
                 text = (
-                    "🎯 <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
+                    " <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "ℹ️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
+                    "️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
                     "⚡ <b>Engine Status:</b> Mengawasi market Binance Spot secara live.\n"
                     "Begitu harga menyentuh target Take Profit, bot otomatis mengeksekusi penutupan order di bursa dan mendistribusikan profit waterfall!"
                 )
@@ -621,7 +620,7 @@ class TelegramPollingRunner:
                     )
                     regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
                     text = (
-                        "⚡ <b>MONEY For HONEY — Live Market Radar</b>\n"
+                        " <b>MONEY For HONEY — Live Market Radar</b>\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"• <b>Symbol:</b> <code>{regime.symbol}</code> (15m Timeframe)\n"
                         f"• <b>Real-Time Price:</b> <code>${regime.current_price:,.2f}</code>\n"
@@ -694,7 +693,7 @@ class TelegramPollingRunner:
                 "📢 <b>MONEY For HONEY — OFFICIAL TELEMETRY UPDATE</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"⚡ <b>Engine Health:</b> {breaker_icon}\n"
-                f"📊 <b>Active Positions:</b> <code>{active_count} Open Strategies</code>\n"
+                f" <b>Active Positions:</b> <code>{active_count} Open Strategies</code>\n"
                 f"📉 <b>Daily Drawdown:</b> <code>{drawdown_str}</code> (Max Risk Cap: 5.0%)\n"
                 f"🏦 <b>Vault Reserves:</b> <code>${summary['total_vault_equity']:,.2f} USDT</code>\n"
                 f"📈 <b>Passive APY (Binance Earn):</b> <code>{summary['estimated_apy_pct']}%</code>\n"
@@ -844,8 +843,11 @@ class TelegramPollingRunner:
             staked_amount = 0.0
             prod_type = "Flexible Auto-Compound"
             status_text = "SUCCESS"
+            current_vault = 0.0
             if vault_manager:
                 try:
+                    summary = vault_manager.get_vault_summary()
+                    current_vault = summary.get("total_vault_equity", 0.0)
                     sweep_res = await vault_manager.execute_auto_vault_sweep()
                     staked_amount = sweep_res.amount
                     prod_type = sweep_res.product_type
@@ -860,14 +862,23 @@ class TelegramPollingRunner:
                 ) as ex:
                     logger.warning("Auto vault sweep exception: %s", ex)
 
+            if status_text == "SKIPPED":
+                # Fixed escape sequence: \g -> \\g
+                status_line = f"🟡 <b>ACCUMULATING</b> (<code>${current_vault:,.2f}</code> / Min $0.50)"
+                note_line = f"\nℹ️ <i>Dana brankas saat ini terkumpul <b>${current_vault:,.2f} USDT</b>. Binance mewajibkan minimal setoran $0.50 USDT. Bot akan menyapu otomatis ke Simple Earn setelah terkumpul $\\ge $0.50.</i>\n"
+            else:
+                status_line = f"🟢 <b>{status_text}</b>"
+                note_line = f"\n✅ <i>Berhasil disetor ke Binance Simple Earn ({prod_type})!</i>\n"
+
             text = (
                 "🏦 <b>BINANCE SIMPLE EARN — VAULT SWEEP</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"• Status: <b>{status_text}</b>\n"
-                f"• Product: <b>USDT Simple Earn ({prod_type})</b>\n"
+                f"• Status: {status_line}\n"
+                f"• Vault Reserve: <code>${current_vault:,.2f} USDT</code>\n"
                 f"• Amount Staked: <code>${staked_amount:,.2f} USDT</code>\n"
                 "• Projected APY: <code>7.2%</code>\n"
-                "• Cash Drag: <code>0.00% (Zero Idle Capital)</code>"
+                f"{note_line}"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
             markup = StandaloneKeyboards.status_menu()
 
@@ -978,13 +989,11 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
 
     # 2. Autonomous Quantitative Trading Loop (Binance Market Scanning & Order Execution)
     if autonomous_trading_loop:
-        logger.info(
-            "🧠 Initializing Autonomous Trading Engine alongside Telegram Bot..."
-        )
+        logger.info(" Initializing Autonomous Trading Engine alongside Telegram Bot...")
         tasks.append(asyncio.create_task(autonomous_trading_loop()))
     else:
         logger.warning(
-            "⚠️ autonomous_trading_loop could not be imported; running in Bot-Only mode."
+            "️ autonomous_trading_loop could not be imported; running in Bot-Only mode."
         )
 
     # 3. Scheduled Channel Telemetry Heartbeat (Sends live heartbeat status to channel every 30 minutes)
@@ -995,7 +1004,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
             try:
                 if notifier:
                     logger.info(
-                        "📡 Broadcasting routine telemetry heartbeat to channel & operator..."
+                        " Broadcasting routine telemetry heartbeat to channel & operator..."
                     )
                     if hasattr(notifier, "broadcast_to_community"):
                         await notifier.broadcast_to_community(
@@ -1003,7 +1012,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
                             body=(
                                 "Autonomous Quantitative Market Scanner is ACTIVE.\n"
                                 "• Regime: Multi-timeframe Breakout & Mean Reversion\n"
-                                "• Protective Stops: Active with 1.8x ATR trailing\n"
+                                "• Protective Stops: Wide ATR Trailing Guard (Anti-Wick)\n"
                                 "• Execution Gate: Binance Spot Live Order Routing"
                             ),
                             category="HEARTBEAT",
@@ -1014,7 +1023,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
                             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             "Autonomous Quantitative Market Scanner is ACTIVE.\n"
                             "• Regime: Multi-timeframe Breakout & Mean Reversion\n"
-                            "• Protective Stops: Active with 1.8x ATR trailing\n"
+                            "• Protective Stops: Wide ATR Trailing Guard (Anti-Wick)\n"
                             "• Execution Gate: Binance Spot Live Order Routing\n"
                             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             '📢 <a href="https://t.me/HoneyForHoneyOfficial">t.me/HoneyForHoneyOfficial</a>'

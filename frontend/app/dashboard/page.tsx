@@ -69,48 +69,77 @@ interface VaultData {
   totalReinvestedIntoTrading: number;
   estimatedApyPct: number;
   projectedMonthlyInterestUsdt: number;
-  lockedTiers: Array<{ tenure: string; amount: number; apy: number; autoRenew: boolean }>;
-  flexibleTier: { amount: number; asset: string; apy: number; autoSubscribe: boolean };
+  lockedTiers: Array<{
+    tenure: string;
+    amount: number;
+    apy: number;
+    autoRenew: boolean;
+  }>;
+  flexibleTier: {
+    amount: number;
+    asset: string;
+    apy: number;
+    autoSubscribe: boolean;
+  };
 }
 
 export default function DashboardPage() {
   // Circuit Breaker State
-  const [circuitBreakerActive, setCircuitBreakerActive] = useState<boolean>(false);
-  const [circuitBreakerReason, setCircuitBreakerReason] = useState<string | null>(null);
+  const [circuitBreakerActive, setCircuitBreakerActive] =
+    useState<boolean>(false);
+  const [circuitBreakerReason, setCircuitBreakerReason] = useState<
+    string | null
+  >(null);
   const [dailyDrawdownPct, setDailyDrawdownPct] = useState<number>(1.84);
   const [maxDrawdownLimitPct] = useState<number>(5.0);
 
   // Timeframe and Navigation
-  const [selectedTimeframe, setSelectedTimeframe] = useState<"1H" | "24H" | "7D" | "30D" | "ALL">("24H");
-  const [activeTab, setActiveTab] = useState<"overview" | "trades" | "vault" | "arbitrage" | "regime">("overview");
+  const [selectedTimeframe, setSelectedTimeframe] = useState<
+    "1H" | "24H" | "7D" | "30D" | "ALL"
+  >("24H");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "trades" | "vault" | "arbitrage" | "regime"
+  >("overview");
 
   // Live Metric Telemetry
   const [totalEquity, setTotalEquity] = useState<number>(24850.25);
-  const [todayPnl, setTodayPnl] = useState<number>(845.20);
+  const [todayPnl, setTodayPnl] = useState<number>(845.2);
   const [todayPnlPct, setTodayPnlPct] = useState<number>(3.52);
   const [winRate, setWinRate] = useState<number>(68.4);
   const [adxValue, setAdxValue] = useState<number>(28.6);
   const [atrPct, setAtrPct] = useState<number>(1.95);
-  const [marketRegime, setMarketRegime] = useState<"BREAKOUT" | "MEAN_REVERSION" | "TRANSITION">("BREAKOUT");
+  const [marketRegime, setMarketRegime] = useState<
+    "BREAKOUT" | "MEAN_REVERSION" | "TRANSITION"
+  >("BREAKOUT");
 
   // Notifications Log
-  const [notificationLogs, setNotificationLogs] = useState<Array<{ id: string; channel: "TELEGRAM" | "WHATSAPP"; message: string; timestamp: string }>>([
+  const [notificationLogs, setNotificationLogs] = useState<
+    Array<{
+      id: string;
+      channel: "TELEGRAM" | "WHATSAPP";
+      message: string;
+      timestamp: string;
+    }>
+  >([
     {
       id: "nt-1",
       channel: "TELEGRAM",
-      message: "Trade BUY BTC/USDT filled at $91,850.00 | Allocated Risk: $150.00 (1.5%)",
+      message:
+        "Trade BUY BTC/USDT filled at $91,850.00 | Allocated Risk: $150.00 (1.5%)",
       timestamp: "10 mins ago",
     },
     {
       id: "nt-2",
       channel: "TELEGRAM",
-      message: "Profit Waterfall: Gross +$420.00 -> 5% Fee ($21.00), 70% Reinvest ($279.30), 30% Vault ($119.70)",
+      message:
+        "Profit Waterfall: Gross +$420.00 -> 5% Fee ($21.00), 70% Reinvest ($279.30), 30% Vault ($119.70)",
       timestamp: "32 mins ago",
     },
     {
       id: "nt-3",
       channel: "TELEGRAM",
-      message: "Binance Simple Earn Sweep: Subscribed $119.70 to Locked 30-Days @ 9.8% APY",
+      message:
+        "Binance Simple Earn Sweep: Subscribed $119.70 to Locked 30-Days @ 9.8% APY",
       timestamp: "32 mins ago",
     },
   ]);
@@ -122,13 +151,13 @@ export default function DashboardPage() {
       symbol: "BTC/USDT",
       strategy: "DYNAMIC_BREAKOUT_MOMENTUM",
       side: "BUY",
-      entryPrice: 91850.00,
-      markPrice: 93420.50,
-      stopLoss: 90400.00,
-      takeProfit: 95475.00,
+      entryPrice: 91850.0,
+      markPrice: 93420.5,
+      stopLoss: 90400.0,
+      takeProfit: 95475.0,
       quantity: 0.1035,
       notionalUsdt: 9668.02,
-      allocatedRiskUsdt: 150.00,
+      allocatedRiskUsdt: 150.0,
       unrealizedPnlUsdt: 162.51,
       unrealizedPnlPct: 1.71,
       duration: "2h 45m",
@@ -140,9 +169,9 @@ export default function DashboardPage() {
       symbol: "SOL/USDT",
       strategy: "STATISTICAL_MEAN_REVERSION",
       side: "BUY",
-      entryPrice: 212.40,
-      markPrice: 217.10,
-      stopLoss: 208.50,
+      entryPrice: 212.4,
+      markPrice: 217.1,
+      stopLoss: 208.5,
       takeProfit: 222.15,
       quantity: 12.8,
       notionalUsdt: 2778.88,
@@ -158,10 +187,10 @@ export default function DashboardPage() {
       symbol: "ETH/USDT",
       strategy: "SPATIAL_ARBITRAGE_TRILATERAL",
       side: "ARBITRAGE",
-      entryPrice: 3445.10,
-      markPrice: 3474.20,
-      stopLoss: 3420.00,
-      takeProfit: 3495.00,
+      entryPrice: 3445.1,
+      markPrice: 3474.2,
+      stopLoss: 3420.0,
+      takeProfit: 3495.0,
       quantity: 0.85,
       notionalUsdt: 2953.07,
       allocatedRiskUsdt: 21.33,
@@ -179,12 +208,12 @@ export default function DashboardPage() {
       symbol: "ETH/USDT",
       buyExchange: "BINANCE",
       sellExchange: "BYBIT",
-      buyPrice: 3462.10,
-      sellPrice: 3488.50,
+      buyPrice: 3462.1,
+      sellPrice: 3488.5,
       grossSpreadPct: 0.762,
       netSpreadPct: 0.627,
       takerFeePct: 0.135,
-      estimatedProfitUsdt: 62.70,
+      estimatedProfitUsdt: 62.7,
       isExecutable: true,
       status: "ARBITRAGE_TRIGGERED",
     },
@@ -192,12 +221,12 @@ export default function DashboardPage() {
       symbol: "BTC/USDT",
       buyExchange: "BYBIT",
       sellExchange: "OKX",
-      buyPrice: 92380.00,
-      sellPrice: 93120.00,
+      buyPrice: 92380.0,
+      sellPrice: 93120.0,
       grossSpreadPct: 0.801,
       netSpreadPct: 0.661,
-      takerFeePct: 0.140,
-      estimatedProfitUsdt: 132.20,
+      takerFeePct: 0.14,
+      estimatedProfitUsdt: 132.2,
       isExecutable: true,
       status: "ARBITRAGE_TRIGGERED",
     },
@@ -205,7 +234,7 @@ export default function DashboardPage() {
       symbol: "SOL/USDT",
       buyExchange: "OKX",
       sellExchange: "BINANCE",
-      buyPrice: 214.30,
+      buyPrice: 214.3,
       sellPrice: 215.85,
       grossSpreadPct: 0.723,
       netSpreadPct: 0.568,
@@ -218,8 +247,8 @@ export default function DashboardPage() {
       symbol: "BNB/USDT",
       buyExchange: "BINANCE",
       sellExchange: "OKX",
-      buyPrice: 642.50,
-      sellPrice: 645.10,
+      buyPrice: 642.5,
+      sellPrice: 645.1,
       grossSpreadPct: 0.404,
       netSpreadPct: 0.249,
       takerFeePct: 0.155,
@@ -232,20 +261,25 @@ export default function DashboardPage() {
   // Vault Staking Status
   const [vaultData, setVaultData] = useState<VaultData>({
     totalVaultEquity: 5120.45,
-    pendingReserve: 88.50,
-    flexibleStaked: 1450.00,
+    pendingReserve: 88.5,
+    flexibleStaked: 1450.0,
     lockedStaked: 3581.95,
-    totalGrossProfitProcessed: 14620.00,
-    totalMaintenanceFeesDeducted: 731.00,
-    totalReinvestedIntoTrading: 9722.30,
+    totalGrossProfitProcessed: 14620.0,
+    totalMaintenanceFeesDeducted: 731.0,
+    totalReinvestedIntoTrading: 9722.3,
     estimatedApyPct: 13.85,
-    projectedMonthlyInterestUsdt: 59.10,
+    projectedMonthlyInterestUsdt: 59.1,
     lockedTiers: [
-      { tenure: "90 Days Locked", amount: 2150.00, apy: 14.50, autoRenew: true },
-      { tenure: "60 Days Locked", amount: 964.10, apy: 12.20, autoRenew: true },
-      { tenure: "30 Days Locked", amount: 467.85, apy: 9.80, autoRenew: true },
+      { tenure: "90 Days Locked", amount: 2150.0, apy: 14.5, autoRenew: true },
+      { tenure: "60 Days Locked", amount: 964.1, apy: 12.2, autoRenew: true },
+      { tenure: "30 Days Locked", amount: 467.85, apy: 9.8, autoRenew: true },
     ],
-    flexibleTier: { amount: 1450.00, asset: "USDT", apy: 7.20, autoSubscribe: true },
+    flexibleTier: {
+      amount: 1450.0,
+      asset: "USDT",
+      apy: 7.2,
+      autoSubscribe: true,
+    },
   });
 
   // Simulated live ticker oscillation
@@ -269,7 +303,7 @@ export default function DashboardPage() {
             unrealizedPnlUsdt: parseFloat(pnlUsdt.toFixed(2)),
             unrealizedPnlPct: parseFloat(pnlPct.toFixed(2)),
           };
-        })
+        }),
       );
 
       // Fluctuate arbitrage spreads slightly
@@ -277,7 +311,7 @@ export default function DashboardPage() {
         prev.map((sig) => {
           const delta = (Math.random() - 0.5) * 0.02;
           const newNet = parseFloat((sig.netSpreadPct + delta).toFixed(3));
-          const executable = newNet >= 0.60;
+          const executable = newNet >= 0.6;
           return {
             ...sig,
             netSpreadPct: newNet,
@@ -285,7 +319,7 @@ export default function DashboardPage() {
             status: executable ? "ARBITRAGE_TRIGGERED" : "SPREAD_BELOW_0.6%",
             estimatedProfitUsdt: parseFloat((1000 * (newNet / 100)).toFixed(2)),
           };
-        })
+        }),
       );
     }, 2800);
 
@@ -297,12 +331,15 @@ export default function DashboardPage() {
     const nextState = !circuitBreakerActive;
     setCircuitBreakerActive(nextState);
     if (nextState) {
-      setCircuitBreakerReason("Emergency Manual Halt triggered via Operator Dashboard");
+      setCircuitBreakerReason(
+        "Emergency Manual Halt triggered via Operator Dashboard",
+      );
       setNotificationLogs((prev) => [
         {
           id: `nt-${Date.now()}`,
           channel: "WHATSAPP",
-          message: "🚨 EMERGENCY ALERT: Circuit Breaker ENGAGED manually. All order flow suspended!",
+          message:
+            "🚨 EMERGENCY ALERT: Circuit Breaker ENGAGED manually. All order flow suspended!",
           timestamp: "Just now",
         },
         ...prev,
@@ -313,7 +350,8 @@ export default function DashboardPage() {
         {
           id: `nt-${Date.now()}`,
           channel: "TELEGRAM",
-          message: "✅ Circuit Breaker RESET. Trading engine resumed normal multi-strategy execution.",
+          message:
+            "✅ Circuit Breaker RESET. Trading engine resumed normal multi-strategy execution.",
           timestamp: "Just now",
         },
         ...prev,
@@ -333,15 +371,23 @@ export default function DashboardPage() {
       // Execute profit waterfall: 5% fee, 70% reinvest, 30% vault
       const fee = profit * 0.05;
       const net = profit - fee;
-      const reinvest = net * 0.70;
-      const vaultAlloc = net * 0.30;
+      const reinvest = net * 0.7;
+      const vaultAlloc = net * 0.3;
 
       setVaultData((prev) => ({
         ...prev,
-        pendingReserve: parseFloat((prev.pendingReserve + vaultAlloc).toFixed(2)),
-        totalGrossProfitProcessed: parseFloat((prev.totalGrossProfitProcessed + profit).toFixed(2)),
-        totalMaintenanceFeesDeducted: parseFloat((prev.totalMaintenanceFeesDeducted + fee).toFixed(2)),
-        totalReinvestedIntoTrading: parseFloat((prev.totalReinvestedIntoTrading + reinvest).toFixed(2)),
+        pendingReserve: parseFloat(
+          (prev.pendingReserve + vaultAlloc).toFixed(2),
+        ),
+        totalGrossProfitProcessed: parseFloat(
+          (prev.totalGrossProfitProcessed + profit).toFixed(2),
+        ),
+        totalMaintenanceFeesDeducted: parseFloat(
+          (prev.totalMaintenanceFeesDeducted + fee).toFixed(2),
+        ),
+        totalReinvestedIntoTrading: parseFloat(
+          (prev.totalReinvestedIntoTrading + reinvest).toFixed(2),
+        ),
       }));
 
       setNotificationLogs((prev) => [
@@ -411,7 +457,9 @@ export default function DashboardPage() {
     ]);
 
     // Add to active positions or harvest
-    setTodayPnl((prev) => parseFloat((prev + sig.estimatedProfitUsdt).toFixed(2)));
+    setTodayPnl((prev) =>
+      parseFloat((prev + sig.estimatedProfitUsdt).toFixed(2)),
+    );
   };
 
   return (
@@ -425,10 +473,14 @@ export default function DashboardPage() {
           {/* Market Regime Badge */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
             <span className="text-slate-400">Regime:</span>
-            <span className="font-mono font-bold text-amber-400">{marketRegime}</span>
+            <span className="font-mono font-bold text-amber-400">
+              {marketRegime}
+            </span>
             <span className="text-slate-500">|</span>
             <span className="text-slate-400">ADX:</span>
-            <span className="font-mono text-emerald-400 font-semibold">{adxValue}</span>
+            <span className="font-mono text-emerald-400 font-semibold">
+              {adxValue}
+            </span>
           </div>
 
           {/* Drawdown Gauge */}
@@ -454,9 +506,13 @@ export default function DashboardPage() {
                 : "bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 hover:border-amber-500/40"
             }`}
           >
-            <ShieldAlert className={`w-4 h-4 ${circuitBreakerActive ? "text-white" : "text-amber-400"}`} />
+            <ShieldAlert
+              className={`w-4 h-4 ${circuitBreakerActive ? "text-white" : "text-amber-400"}`}
+            />
             <span>
-              {circuitBreakerActive ? "CIRCUIT BREAKER: TRIPPED (HALTED)" : "CIRCUIT BREAKER: ARMED"}
+              {circuitBreakerActive
+                ? "CIRCUIT BREAKER: TRIPPED (HALTED)"
+                : "CIRCUIT BREAKER: ARMED"}
             </span>
           </button>
         </div>
@@ -468,7 +524,10 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 animate-bounce" />
             <span className="font-semibold">EMERGENCY HALT ACTIVE:</span>
-            <span>{circuitBreakerReason || "All order generation suspended to protect capital."}</span>
+            <span>
+              {circuitBreakerReason ||
+                "All order generation suspended to protect capital."}
+            </span>
           </div>
           <button
             onClick={handleToggleCircuitBreaker}
@@ -486,16 +545,20 @@ export default function DashboardPage() {
           {/* Total Account Equity */}
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition-colors shadow-sm">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span className="uppercase tracking-wider font-semibold">Total Portfolio Equity</span>
+              <span className="uppercase tracking-wider font-semibold">
+                Total Portfolio Equity
+              </span>
               <DollarSign className="w-4 h-4 text-amber-400" />
             </div>
             <div className="flex items-baseline gap-2.5">
               <span className="font-mono text-2xl lg:text-3xl font-bold text-white tracking-tight">
-                ${totalEquity.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                $
+                {totalEquity.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </span>
               <span className="text-xs font-mono font-semibold text-emerald-400 flex items-center">
-                <ArrowUpRight className="w-3.5 h-3.5" />
-                +{todayPnlPct}%
+                <ArrowUpRight className="w-3.5 h-3.5" />+{todayPnlPct}%
               </span>
             </div>
             <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono">
@@ -507,17 +570,23 @@ export default function DashboardPage() {
           {/* 24h Realized & Unrealized PnL */}
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition-colors shadow-sm">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span className="uppercase tracking-wider font-semibold">24h Net Profit & Harvest</span>
+              <span className="uppercase tracking-wider font-semibold">
+                24h Net Profit & Harvest
+              </span>
               <TrendingUp className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-baseline gap-2.5">
               <span className="font-mono text-2xl lg:text-3xl font-bold text-emerald-400 tracking-tight">
-                +${todayPnl.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                +$
+                {todayPnl.toLocaleString("en-US", { minimumFractionDigits: 2 })}
               </span>
               <span className="text-xs font-mono text-slate-400">USDT</span>
             </div>
             <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-              <span>Win Rate: <strong className="text-emerald-400">{winRate}%</strong></span>
+              <span>
+                Win Rate:{" "}
+                <strong className="text-emerald-400">{winRate}%</strong>
+              </span>
               <span className="text-slate-500">70/30 Compounded</span>
             </div>
           </div>
@@ -525,12 +594,17 @@ export default function DashboardPage() {
           {/* Binance Simple Earn Auto-Vault */}
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition-colors shadow-sm">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span className="uppercase tracking-wider font-semibold">Binance Earn Vault Equity</span>
+              <span className="uppercase tracking-wider font-semibold">
+                Binance Earn Vault Equity
+              </span>
               <Vault className="w-4 h-4 text-amber-400" />
             </div>
             <div className="flex items-baseline gap-2.5">
               <span className="font-mono text-2xl lg:text-3xl font-bold text-amber-300 tracking-tight">
-                ${vaultData.totalVaultEquity.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                $
+                {vaultData.totalVaultEquity.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </span>
               <span className="text-xs font-mono font-semibold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                 {vaultData.estimatedApyPct}% APY
@@ -545,7 +619,9 @@ export default function DashboardPage() {
           {/* Spatial Arbitrage Live Status */}
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 transition-colors shadow-sm">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span className="uppercase tracking-wider font-semibold">Spatial Arbitrage Matrix</span>
+              <span className="uppercase tracking-wider font-semibold">
+                Spatial Arbitrage Matrix
+              </span>
               <Zap className="w-4 h-4 text-yellow-400" />
             </div>
             <div className="flex items-baseline gap-2.5">
@@ -558,7 +634,9 @@ export default function DashboardPage() {
             </div>
             <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 font-mono">
               <span>Binance · Bybit · OKX</span>
-              <span className="text-emerald-400 font-semibold">Auto-Execute ON</span>
+              <span className="text-emerald-400 font-semibold">
+                Auto-Execute ON
+              </span>
             </div>
           </div>
         </section>
@@ -574,7 +652,8 @@ export default function DashboardPage() {
                   Autonomous Real-Time Equity & PnL Curve
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                  Scale-agnostic risk compounding with 1.5% stop guard & automated vault lockup
+                  Scale-agnostic risk compounding with 1.5% stop guard &
+                  automated vault lockup
                 </p>
               </div>
 
@@ -598,7 +677,11 @@ export default function DashboardPage() {
 
             {/* SVG High-Performance Reactive Chart */}
             <div className="h-64 sm:h-72 w-full relative">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 800 240" preserveAspectRatio="none">
+              <svg
+                className="w-full h-full overflow-visible"
+                viewBox="0 0 800 240"
+                preserveAspectRatio="none"
+              >
                 <defs>
                   <linearGradient id="pnlGlowGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#10B981" stopOpacity="0.35" />
@@ -613,9 +696,30 @@ export default function DashboardPage() {
                 </defs>
 
                 {/* Grid Lines */}
-                <line x1="0" y1="40" x2="800" y2="40" stroke="#1E293B" strokeDasharray="3 3" />
-                <line x1="0" y1="100" x2="800" y2="100" stroke="#1E293B" strokeDasharray="3 3" />
-                <line x1="0" y1="160" x2="800" y2="160" stroke="#1E293B" strokeDasharray="3 3" />
+                <line
+                  x1="0"
+                  y1="40"
+                  x2="800"
+                  y2="40"
+                  stroke="#1E293B"
+                  strokeDasharray="3 3"
+                />
+                <line
+                  x1="0"
+                  y1="100"
+                  x2="800"
+                  y2="100"
+                  stroke="#1E293B"
+                  strokeDasharray="3 3"
+                />
+                <line
+                  x1="0"
+                  y1="160"
+                  x2="800"
+                  y2="160"
+                  stroke="#1E293B"
+                  strokeDasharray="3 3"
+                />
                 <line x1="0" y1="220" x2="800" y2="220" stroke="#1E293B" />
 
                 {/* Area Gradient Fill */}
@@ -637,7 +741,13 @@ export default function DashboardPage() {
                 <circle cx="200" cy="160" r="4" fill="#F59E0B" />
                 <circle cx="400" cy="120" r="4" fill="#34D399" />
                 <circle cx="600" cy="70" r="4" fill="#10B981" />
-                <circle cx="800" cy="25" r="6" fill="#10B981" className="animate-pulse" />
+                <circle
+                  cx="800"
+                  cy="25"
+                  r="6"
+                  fill="#10B981"
+                  className="animate-pulse"
+                />
                 <circle cx="800" cy="25" r="2.5" fill="#FFFFFF" />
               </svg>
 
@@ -672,14 +782,18 @@ export default function DashboardPage() {
                 Smart Order Router & Risk Guard
               </h3>
               <p className="text-xs text-slate-400 font-mono">
-                Orderbook Depth Guard (<span className="text-amber-400">&lt;0.05%</span> slippage) & TWAP
+                Orderbook Depth Guard (
+                <span className="text-amber-400">&lt;0.05%</span> slippage) &
+                TWAP
               </p>
             </div>
 
             <div className="space-y-3 font-mono text-xs">
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-slate-400">Execution Sizer:</span>
-                <span className="text-emerald-400 font-bold">Scale-Agnostic (1.5% Risk)</span>
+                <span className="text-emerald-400 font-bold">
+                  Scale-Agnostic (1.5% Risk)
+                </span>
               </div>
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-slate-400">Daily DD Cap (Circuit):</span>
@@ -687,15 +801,21 @@ export default function DashboardPage() {
               </div>
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-slate-400">Binance Min Notional:</span>
-                <span className="text-slate-200 font-bold">$10.00 USDT Floor</span>
+                <span className="text-slate-200 font-bold">
+                  $10.00 USDT Floor
+                </span>
               </div>
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-slate-400">Arbitrage Net Threshold:</span>
-                <span className="text-emerald-400 font-bold">≥ 0.60% Net Spread</span>
+                <span className="text-emerald-400 font-bold">
+                  ≥ 0.60% Net Spread
+                </span>
               </div>
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-slate-400">TWAP Slicer Sizing:</span>
-                <span className="text-slate-200 font-bold">&gt; $2,500 USDT (5 Batches)</span>
+                <span className="text-slate-200 font-bold">
+                  &gt; $2,500 USDT (5 Batches)
+                </span>
               </div>
             </div>
 
@@ -706,14 +826,18 @@ export default function DashboardPage() {
                   <Send className="w-3.5 h-3.5 text-sky-400" />
                   Telegram Bot & Channel:
                 </span>
-                <span className="text-emerald-400 font-mono font-bold">CONNECTED</span>
+                <span className="text-emerald-400 font-mono font-bold">
+                  CONNECTED
+                </span>
               </div>
               <div className="flex items-center justify-between text-slate-400">
                 <span className="flex items-center gap-1.5">
                   <Bell className="w-3.5 h-3.5 text-emerald-400" />
                   WhatsApp Emergency API:
                 </span>
-                <span className="text-emerald-400 font-mono font-bold">READY</span>
+                <span className="text-emerald-400 font-mono font-bold">
+                  READY
+                </span>
               </div>
             </div>
           </div>
@@ -788,39 +912,70 @@ export default function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {activeTrades.map((trade) => (
-                    <tr key={trade.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr
+                      key={trade.id}
+                      className="hover:bg-slate-800/40 transition-colors"
+                    >
                       <td className="p-4">
-                        <div className="font-bold text-white text-sm">{trade.symbol}</div>
-                        <div className="text-[11px] text-slate-500">{trade.id} · {trade.duration}</div>
+                        <div className="font-bold text-white text-sm">
+                          {trade.symbol}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {trade.id} · {trade.duration}
+                        </div>
                       </td>
                       <td className="p-4">
                         <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-700 mb-1">
                           {trade.strategy.replace(/_/g, " ")}
                         </span>
-                        <div className="text-emerald-400 font-bold">{trade.side} ({trade.leverage})</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-slate-300">Entry: ${trade.entryPrice.toLocaleString()}</div>
-                        <div className="text-emerald-400 font-bold">Mark: ${trade.markPrice.toLocaleString()}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-rose-400">SL: ${trade.stopLoss.toLocaleString()}</div>
-                        <div className="text-emerald-400">TP: ${trade.takeProfit.toLocaleString()}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-slate-200 font-bold">${trade.notionalUsdt.toLocaleString()}</div>
-                        <div className="text-slate-500">{trade.quantity} units</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-amber-400 font-bold">${trade.allocatedRiskUsdt.toFixed(2)}</div>
-                        <div className="text-[10px] text-slate-500">Max 1.5% Cap</div>
-                      </td>
-                      <td className="p-4">
-                        <div className={`font-bold text-sm ${trade.unrealizedPnlUsdt >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                          {trade.unrealizedPnlUsdt >= 0 ? "+" : ""}${trade.unrealizedPnlUsdt.toFixed(2)}
+                        <div className="text-emerald-400 font-bold">
+                          {trade.side} ({trade.leverage})
                         </div>
-                        <div className={`text-[11px] ${trade.unrealizedPnlPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                          ({trade.unrealizedPnlPct >= 0 ? "+" : ""}{trade.unrealizedPnlPct.toFixed(2)}%)
+                      </td>
+                      <td className="p-4">
+                        <div className="text-slate-300">
+                          Entry: ${trade.entryPrice.toLocaleString()}
+                        </div>
+                        <div className="text-emerald-400 font-bold">
+                          Mark: ${trade.markPrice.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-rose-400">
+                          SL: ${trade.stopLoss.toLocaleString()}
+                        </div>
+                        <div className="text-emerald-400">
+                          TP: ${trade.takeProfit.toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-slate-200 font-bold">
+                          ${trade.notionalUsdt.toLocaleString()}
+                        </div>
+                        <div className="text-slate-500">
+                          {trade.quantity} units
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-amber-400 font-bold">
+                          ${trade.allocatedRiskUsdt.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Max 1.5% Cap
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div
+                          className={`font-bold text-sm ${trade.unrealizedPnlUsdt >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                        >
+                          {trade.unrealizedPnlUsdt >= 0 ? "+" : ""}$
+                          {trade.unrealizedPnlUsdt.toFixed(2)}
+                        </div>
+                        <div
+                          className={`text-[11px] ${trade.unrealizedPnlPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                        >
+                          ({trade.unrealizedPnlPct >= 0 ? "+" : ""}
+                          {trade.unrealizedPnlPct.toFixed(2)}%)
                         </div>
                       </td>
                       <td className="p-4 text-right">
@@ -835,8 +990,12 @@ export default function DashboardPage() {
                   ))}
                   {activeTrades.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-slate-500">
-                        No active trades currently open. Engine scanner is monitoring market regimes.
+                      <td
+                        colSpan={8}
+                        className="p-8 text-center text-slate-500"
+                      >
+                        No active trades currently open. Engine scanner is
+                        monitoring market regimes.
                       </td>
                     </tr>
                   )}
@@ -853,11 +1012,15 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>
-                  <strong>Spatial Arbitrage Rule:</strong> Scans Binance vs Bybit vs OKX orderbooks concurrently.
-                  Automatically executes if <strong>Net Spread ≥ 0.60%</strong> after subtracting exchange taker fees (0.06% - 0.08%) and slippage buffers.
+                  <strong>Spatial Arbitrage Rule:</strong> Scans Binance vs
+                  Bybit vs OKX orderbooks concurrently. Automatically executes
+                  if <strong>Net Spread ≥ 0.60%</strong> after subtracting
+                  exchange taker fees (0.06% - 0.08%) and slippage buffers.
                 </span>
               </div>
-              <span className="font-mono text-emerald-400 font-bold">CCXT Async Live Poller</span>
+              <span className="font-mono text-emerald-400 font-bold">
+                CCXT Async Live Poller
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -872,7 +1035,9 @@ export default function DashboardPage() {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-base font-mono">{sig.symbol}</span>
+                      <span className="font-bold text-white text-base font-mono">
+                        {sig.symbol}
+                      </span>
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
                           sig.isExecutable
@@ -883,40 +1048,68 @@ export default function DashboardPage() {
                         {sig.status}
                       </span>
                     </div>
-                    <span className="font-mono text-xs text-slate-400">Order: $1,000 USDT</span>
+                    <span className="font-mono text-xs text-slate-400">
+                      Order: $1,000 USDT
+                    </span>
                   </div>
 
                   {/* Execution Route Visualizer */}
                   <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs mb-3">
                     <div>
-                      <div className="text-slate-500 text-[10px]">BUY EXCHANGE</div>
-                      <div className="font-bold text-amber-400">{sig.buyExchange}</div>
-                      <div className="text-slate-300">${sig.buyPrice.toLocaleString()}</div>
+                      <div className="text-slate-500 text-[10px]">
+                        BUY EXCHANGE
+                      </div>
+                      <div className="font-bold text-amber-400">
+                        {sig.buyExchange}
+                      </div>
+                      <div className="text-slate-300">
+                        ${sig.buyPrice.toLocaleString()}
+                      </div>
                     </div>
                     <div className="text-center px-3">
                       <ArrowUpRight className="w-5 h-5 text-emerald-400 mx-auto" />
-                      <div className="text-[10px] text-slate-500 mt-0.5">Route</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        Route
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-slate-500 text-[10px]">SELL EXCHANGE</div>
-                      <div className="font-bold text-emerald-400">{sig.sellExchange}</div>
-                      <div className="text-slate-300">${sig.sellPrice.toLocaleString()}</div>
+                      <div className="text-slate-500 text-[10px]">
+                        SELL EXCHANGE
+                      </div>
+                      <div className="font-bold text-emerald-400">
+                        {sig.sellExchange}
+                      </div>
+                      <div className="text-slate-300">
+                        ${sig.sellPrice.toLocaleString()}
+                      </div>
                     </div>
                   </div>
 
                   {/* Spread breakdown */}
                   <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono mb-4">
                     <div className="p-2 rounded bg-slate-950/60 border border-slate-800/80">
-                      <div className="text-slate-500 text-[10px]">GROSS SPREAD</div>
-                      <div className="text-slate-300 font-semibold">+{sig.grossSpreadPct}%</div>
+                      <div className="text-slate-500 text-[10px]">
+                        GROSS SPREAD
+                      </div>
+                      <div className="text-slate-300 font-semibold">
+                        +{sig.grossSpreadPct}%
+                      </div>
                     </div>
                     <div className="p-2 rounded bg-slate-950/60 border border-slate-800/80">
-                      <div className="text-slate-500 text-[10px]">TAKER FEES</div>
-                      <div className="text-rose-400 font-semibold">-{sig.takerFeePct}%</div>
+                      <div className="text-slate-500 text-[10px]">
+                        TAKER FEES
+                      </div>
+                      <div className="text-rose-400 font-semibold">
+                        -{sig.takerFeePct}%
+                      </div>
                     </div>
                     <div className="p-2 rounded bg-slate-950/60 border border-slate-800/80">
-                      <div className="text-slate-500 text-[10px]">NET PROFIT</div>
-                      <div className={`font-bold ${sig.isExecutable ? "text-emerald-400" : "text-slate-400"}`}>
+                      <div className="text-slate-500 text-[10px]">
+                        NET PROFIT
+                      </div>
+                      <div
+                        className={`font-bold ${sig.isExecutable ? "text-emerald-400" : "text-slate-400"}`}
+                      >
                         +{sig.netSpreadPct}%
                       </div>
                     </div>
@@ -925,7 +1118,9 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <div className="text-xs font-mono">
                       <span className="text-slate-400">Est. Profit: </span>
-                      <strong className="text-emerald-400">+${sig.estimatedProfitUsdt} USDT</strong>
+                      <strong className="text-emerald-400">
+                        +${sig.estimatedProfitUsdt} USDT
+                      </strong>
                     </div>
                     <button
                       disabled={!sig.isExecutable || circuitBreakerActive}
@@ -951,16 +1146,31 @@ export default function DashboardPage() {
             {/* Auto-compounding Rules Description */}
             <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
               <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <span className="text-amber-400 font-bold block mb-1">1. 5% Platform Maintenance Fee</span>
-                <p className="text-slate-400">Automatically deducted from gross trading profits prior to capital distribution.</p>
+                <span className="text-amber-400 font-bold block mb-1">
+                  1. 5% Platform Maintenance Fee
+                </span>
+                <p className="text-slate-400">
+                  Automatically deducted from gross trading profits prior to
+                  capital distribution.
+                </p>
               </div>
               <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <span className="text-emerald-400 font-bold block mb-1">2. 70% Reinvested into Trading</span>
-                <p className="text-slate-400">Automatically scales active account equity for exponential compounding effect.</p>
+                <span className="text-emerald-400 font-bold block mb-1">
+                  2. 70% Reinvested into Trading
+                </span>
+                <p className="text-slate-400">
+                  Automatically scales active account equity for exponential
+                  compounding effect.
+                </p>
               </div>
               <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <span className="text-amber-300 font-bold block mb-1">3. 30% Binance Earn Vault</span>
-                <p className="text-slate-400">Under $100: Flexible Earn. Over $100: Auto-sweep to Locked Staking (30/60/90 days).</p>
+                <span className="text-amber-300 font-bold block mb-1">
+                  3. 30% Binance Earn Vault
+                </span>
+                <p className="text-slate-400">
+                  Under $100: Flexible Earn. Over $100: Auto-sweep to Locked
+                  Staking (30/60/90 days).
+                </p>
               </div>
             </div>
 
@@ -972,8 +1182,12 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <Lock className="w-5 h-5 text-amber-400" />
                     <div>
-                      <h4 className="font-bold text-white text-sm">Binance Locked Staking (30 - 90 Days)</h4>
-                      <p className="text-slate-400 text-xs font-mono">Trigger: Vault Reserve ≥ $100 USDT</p>
+                      <h4 className="font-bold text-white text-sm">
+                        Binance Locked Staking (30 - 90 Days)
+                      </h4>
+                      <p className="text-slate-400 text-xs font-mono">
+                        Trigger: Vault Reserve ≥ $100 USDT
+                      </p>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -983,14 +1197,25 @@ export default function DashboardPage() {
 
                 <div className="space-y-3 font-mono text-xs">
                   {vaultData.lockedTiers.map((tier, i) => (
-                    <div key={i} className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
+                    <div
+                      key={i}
+                      className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between"
+                    >
                       <div>
-                        <div className="font-bold text-slate-200">{tier.tenure}</div>
-                        <div className="text-[11px] text-emerald-400 font-semibold">{tier.apy}% Yield APY</div>
+                        <div className="font-bold text-slate-200">
+                          {tier.tenure}
+                        </div>
+                        <div className="text-[11px] text-emerald-400 font-semibold">
+                          {tier.apy}% Yield APY
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-amber-300">${tier.amount.toLocaleString()} USDT</div>
-                        <div className="text-[10px] text-slate-500">Auto-Renew: Active</div>
+                        <div className="font-bold text-amber-300">
+                          ${tier.amount.toLocaleString()} USDT
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Auto-Renew: Active
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1003,8 +1228,12 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <Layers className="w-5 h-5 text-emerald-400" />
                     <div>
-                      <h4 className="font-bold text-white text-sm">Binance Flexible Earn</h4>
-                      <p className="text-slate-400 text-xs font-mono">Trigger: Vault Reserve &lt; $100 USDT</p>
+                      <h4 className="font-bold text-white text-sm">
+                        Binance Flexible Earn
+                      </h4>
+                      <p className="text-slate-400 text-xs font-mono">
+                        Trigger: Vault Reserve &lt; $100 USDT
+                      </p>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded text-xs font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
@@ -1015,15 +1244,25 @@ export default function DashboardPage() {
                 <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">Flexible Balance:</span>
-                    <strong className="text-white text-sm">${vaultData.flexibleStaked.toFixed(2)} USDT</strong>
+                    <strong className="text-white text-sm">
+                      ${vaultData.flexibleStaked.toFixed(2)} USDT
+                    </strong>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Unallocated Reserve Pool:</span>
-                    <strong className="text-amber-400 text-sm">${vaultData.pendingReserve.toFixed(2)} USDT</strong>
+                    <span className="text-slate-400">
+                      Unallocated Reserve Pool:
+                    </span>
+                    <strong className="text-amber-400 text-sm">
+                      ${vaultData.pendingReserve.toFixed(2)} USDT
+                    </strong>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Projected Monthly Yield:</span>
-                    <strong className="text-emerald-400 text-sm">+${vaultData.projectedMonthlyInterestUsdt} USDT</strong>
+                    <span className="text-slate-400">
+                      Projected Monthly Yield:
+                    </span>
+                    <strong className="text-emerald-400 text-sm">
+                      +${vaultData.projectedMonthlyInterestUsdt} USDT
+                    </strong>
                   </div>
 
                   <button
@@ -1048,31 +1287,53 @@ export default function DashboardPage() {
           <section className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-5 rounded-xl bg-slate-900 border border-slate-800">
-                <span className="text-xs text-slate-400 uppercase font-semibold">ADX Momentum Metric</span>
+                <span className="text-xs text-slate-400 uppercase font-semibold">
+                  ADX Momentum Metric
+                </span>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-3xl font-bold text-emerald-400">{adxValue}</span>
-                  <span className="text-xs text-slate-400 font-mono">&gt; 25 = Breakout</span>
+                  <span className="font-mono text-3xl font-bold text-emerald-400">
+                    {adxValue}
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    &gt; 25 = Breakout
+                  </span>
                 </div>
                 <div className="mt-3 text-xs text-slate-400 font-mono">
-                  Current Regime: <strong className="text-amber-400 font-bold">BREAKOUT STRATEGY ACTIVE</strong>
+                  Current Regime:{" "}
+                  <strong className="text-amber-400 font-bold">
+                    BREAKOUT STRATEGY ACTIVE
+                  </strong>
                 </div>
               </div>
 
               <div className="p-5 rounded-xl bg-slate-900 border border-slate-800">
-                <span className="text-xs text-slate-400 uppercase font-semibold">ATR Volatility Metric</span>
+                <span className="text-xs text-slate-400 uppercase font-semibold">
+                  ATR Volatility Metric
+                </span>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-3xl font-bold text-amber-400">{atrPct}%</span>
-                  <span className="text-xs text-slate-400 font-mono">14 Periods Wilder</span>
+                  <span className="font-mono text-3xl font-bold text-amber-400">
+                    {atrPct}%
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    14 Periods Wilder
+                  </span>
                 </div>
                 <div className="mt-3 text-xs text-slate-400 font-mono">
-                  Stop Distance: <strong className="text-slate-200">1.8x ATR Multiplier</strong>
+                  Stop Distance:{" "}
+                  <strong className="text-slate-200">
+                    2.5x ATR Multiplier (3.8% Min)
+                  </strong>
                 </div>
               </div>
 
               <div className="p-5 rounded-xl bg-slate-900 border border-slate-800">
-                <span className="text-xs text-slate-400 uppercase font-semibold">Regime Strategy Filter</span>
+                <span className="text-xs text-slate-400 uppercase font-semibold">
+                  Regime Strategy Filter
+                </span>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-mono text-xl font-bold text-white">Donchian 20 Break</span>
+                  <span className="font-mono text-xl font-bold text-white">
+                    Donchian 20 Break
+                  </span>
                 </div>
                 <div className="mt-3 text-xs text-slate-400 font-mono">
                   Mean-Reversion switches ON when ADX &lt; 20.0
@@ -1091,7 +1352,9 @@ export default function DashboardPage() {
                 Live Notification Dispatch Ledger (Telegram & WhatsApp API)
               </h4>
             </div>
-            <span className="text-[11px] font-mono text-slate-500">Synchronized Event Bus</span>
+            <span className="text-[11px] font-mono text-slate-500">
+              Synchronized Event Bus
+            </span>
           </div>
 
           <div className="space-y-2 font-mono text-xs">
@@ -1110,9 +1373,13 @@ export default function DashboardPage() {
                   >
                     {log.channel}
                   </span>
-                  <span className="text-slate-300 leading-relaxed">{log.message}</span>
+                  <span className="text-slate-300 leading-relaxed">
+                    {log.message}
+                  </span>
                 </div>
-                <span className="text-slate-500 text-[10px] shrink-0">{log.timestamp}</span>
+                <span className="text-slate-500 text-[10px] shrink-0">
+                  {log.timestamp}
+                </span>
               </div>
             ))}
           </div>
@@ -1121,7 +1388,8 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-4 px-6 text-center text-xs text-slate-500 font-mono">
-        MONEY For HONEY · autonomous Trading system and build self wealth engine for the future · Production V2
+        MONEY For HONEY · autonomous Trading system and build self wealth engine
+        for the future · Production V2
       </footer>
     </div>
   );
