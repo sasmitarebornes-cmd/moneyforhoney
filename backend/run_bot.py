@@ -2,6 +2,7 @@
 """
 MONEY For HONEY — Dedicated Telegram Bot Long-Polling Runner.
 Supports real-time text commands, 2-way callback queries, and Instant Channel Broadcasting.
+NEW: Added Portfolio Health Check & Dust Liquidation features.
 
 How to run:
     python run_bot.py
@@ -45,13 +46,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-# Silence repetitive httpx / httpcore polling logs so Market Scanner & Trade logs are crystal clear
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("money_for_honey.bot_runner")
 
 
-# Standalone UI Keyboards Definition
 class StandaloneKeyboards:
     @staticmethod
     def main_menu() -> dict[str, Any]:
@@ -68,6 +67,10 @@ class StandaloneKeyboards:
                 [
                     {"text": "🏦 Vault & Harvest", "callback_data": "/harvest"},
                     {"text": "⚡ Radar Signals", "callback_data": "/radar"},
+                ],
+                [
+                    {"text": " Portfolio Health", "callback_data": "/portfolio"},
+                    {"text": "🧹 Liquidate Dust", "callback_data": "/liquidate_dust"},
                 ],
                 [
                     {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
@@ -95,10 +98,10 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Balance", "callback_data": "/balance"},
-                    {"text": "📊 Telemetry", "callback_data": "/status"},
+                    {"text": " Portfolio", "callback_data": "/portfolio"},
                 ],
                 [
-                    {"text": " Active Trades", "callback_data": "/positions"},
+                    {"text": "🧹 Liquidate Dust", "callback_data": "/liquidate_dust"},
                     {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
@@ -175,7 +178,6 @@ class StandaloneKeyboards:
         }
 
 
-# Import backend engine if available
 try:
     from app.core.config import settings
     from app.db.database import db_manager
@@ -203,8 +205,6 @@ except (ImportError, AttributeError, KeyError, RuntimeError, TypeError, OSError)
 
 
 class TelegramPollingRunner:
-    """Long-polling daemon for Telegram Bot API with Inline Keyboard Callback handling."""
-
     def __init__(self, token: str, channel_id: str | None = None) -> None:
         self.token = token.strip()
         self.channel_id = channel_id or os.getenv(
@@ -215,7 +215,6 @@ class TelegramPollingRunner:
         self.running = True
 
     async def verify_bot(self, client: httpx.AsyncClient) -> dict:
-        """Verifies bot token and connectivity via getMe."""
         url = f"{self.api_base}/getMe"
         res = await client.get(url, timeout=10.0)
         data = res.json()
@@ -226,7 +225,6 @@ class TelegramPollingRunner:
         return data.get("result", {})
 
     async def register_bot_commands(self, client: httpx.AsyncClient) -> bool:
-        """Registers official Telegram Command Menu (Hamburger menu in chat UI)."""
         url = f"{self.api_base}/setMyCommands"
         commands_payload = {
             "commands": [
@@ -235,6 +233,14 @@ class TelegramPollingRunner:
                     "description": "🎛️ Operator Control Center (Buttons)",
                 },
                 {"command": "balance", "description": "💰 Binance Spot Wallet Balance"},
+                {
+                    "command": "portfolio",
+                    "description": "💼 Portfolio Health & Dust Check",
+                },
+                {
+                    "command": "liquidate_dust",
+                    "description": "🧹 Auto-sell small crypto to USDT",
+                },
                 {"command": "status", "description": "📊 Live Quantitative Telemetry"},
                 {
                     "command": "positions",
@@ -281,7 +287,6 @@ class TelegramPollingRunner:
             return False
 
     async def clear_existing_webhook(self, client: httpx.AsyncClient) -> bool:
-        """Clears any registered webhook so Telegram allows getUpdates long-polling."""
         url = f"{self.api_base}/deleteWebhook"
         res = await client.post(url, json={"drop_pending_updates": False}, timeout=10.0)
         data = res.json()
@@ -298,7 +303,6 @@ class TelegramPollingRunner:
         text: str,
         reply_markup: dict[str, Any] | None = None,
     ) -> bool:
-        """Sends HTML formatted reply with optional Inline Keyboards."""
         url = f"{self.api_base}/sendMessage"
         payload: dict[str, Any] = {
             "chat_id": chat_id,
@@ -308,7 +312,6 @@ class TelegramPollingRunner:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-
         try:
             res = await client.post(url, json=payload, timeout=10.0)
             return res.status_code == 200
@@ -324,7 +327,6 @@ class TelegramPollingRunner:
         text: str,
         reply_markup: dict[str, Any] | None = None,
     ) -> bool:
-        """Edits an existing Telegram message in-place for snappy dashboard interactivity."""
         url = f"{self.api_base}/editMessageText"
         payload: dict[str, Any] = {
             "chat_id": chat_id,
@@ -335,7 +337,6 @@ class TelegramPollingRunner:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-
         try:
             res = await client.post(url, json=payload, timeout=10.0)
             return res.status_code == 200
@@ -348,7 +349,6 @@ class TelegramPollingRunner:
         callback_query_id: str,
         text: str = " Executing...",
     ) -> bool:
-        """Dismisses Telegram loading spinner when an inline button is clicked."""
         url = f"{self.api_base}/answerCallbackQuery"
         try:
             res = await client.post(
@@ -361,15 +361,12 @@ class TelegramPollingRunner:
             return False
 
     async def broadcast_to_channel(self, client: httpx.AsyncClient, text: str) -> bool:
-        """Publishes live telemetry broadcast directly to the official community channel."""
         channel = self.channel_id
         if not channel:
             return False
         return await self.send_response(client, channel, text)
 
     async def handle_update(self, client: httpx.AsyncClient, update: dict) -> None:
-        """Processes an incoming Telegram update (Message or Inline Button Click)."""
-        # Case A: User clicked an Inline Keyboard Button (Callback Query)
         callback_query = update.get("callback_query")
         if callback_query:
             cq_id = callback_query.get("id", "")
@@ -392,19 +389,15 @@ class TelegramPollingRunner:
             if chatops_bot and cq_data:
                 try:
                     await chatops_bot.process_command(
-                        command_text=cq_data,
-                        sender_chat_id=chat_id,
-                        message_id=msg_id,
+                        command_text=cq_data, sender_chat_id=chat_id, message_id=msg_id
                     )
                     return
                 except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
                     logger.exception("Error in chatops_bot processing '%s'", cq_data)
 
-            # Standalone Fallback / Direct handler
             await self._process_standalone_command(client, cq_data, chat_id, msg_id)
             return
 
-        # Case B: User typed a text message or command
         msg = update.get("message") or update.get("channel_post")
         if not msg:
             return
@@ -425,14 +418,12 @@ class TelegramPollingRunner:
         if chatops_bot:
             try:
                 await chatops_bot.process_command(
-                    command_text=text,
-                    sender_chat_id=chat_id,
+                    command_text=text, sender_chat_id=chat_id
                 )
                 return
             except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
                 logger.exception("Error executing command '%s' via chatops_bot", text)
 
-        # Standalone Fallback / Direct handler
         await self._process_standalone_command(client, text, chat_id, None)
 
     async def _process_standalone_command(
@@ -442,8 +433,9 @@ class TelegramPollingRunner:
         chat_id: str,
         msg_id: int | None = None,
     ) -> None:
-        """Full fallback execution engine with complete interactive buttons."""
         cmd = cmd_text.strip().lower().split()[0] if cmd_text else ""
+        text = ""
+        markup = StandaloneKeyboards.main_menu()
 
         if cmd in ["/start", "/help", "/menu"]:
             text = (
@@ -484,13 +476,11 @@ class TelegramPollingRunner:
                 ) as err:
                     logger.debug("Live balance fetch exception: %s", err)
 
-            crypto_section = ""
-            if crypto_assets:
-                crypto_section = (
-                    "\n💼 <b>Holding Crypto Assets:</b>\n"
-                    + "\n".join(crypto_assets)
-                    + "\n"
-                )
+            crypto_section = (
+                "\n💼 <b>Holding Crypto Assets:</b>\n" + "\n".join(crypto_assets) + "\n"
+                if crypto_assets
+                else ""
+            )
 
             text = (
                 "💰 <b>BINANCE SPOT WALLET BALANCE (LIVE)</b>\n"
@@ -502,6 +492,147 @@ class TelegramPollingRunner:
                 "🛡️ <b>Status:</b> 🟢 Live Connected to Binance Spot\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
+            markup = StandaloneKeyboards.balance_menu()
+
+        elif cmd == "/portfolio":
+            text = "💼 <b>PORTFOLIO HEALTH CHECK</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            if exchange_service:
+                try:
+                    balance = await exchange_service.fetch_account_balance()
+                    assets = balance.get("assets", {})
+                    usdt_bal = float(assets.get("USDT", {}).get("total", 0))
+                    total_val = usdt_bal
+                    lines = []
+                    dust_lines = []
+
+                    for sym, data in assets.items():
+                        if sym == "USDT":
+                            continue
+                        total = float(data.get("total", 0))
+                        if total > 0:
+                            try:
+                                ticker = await exchange_service.fetch_ticker(
+                                    f"{sym}/USDT"
+                                )
+                                price = float(ticker.get("last", 0))
+                                val = total * price
+                                total_val += val
+                                if val >= 10.0:
+                                    lines.append(
+                                        f"• <b>{sym}</b>: {total:.6f} = <code>${val:.2f}</code>"
+                                    )
+                                else:
+                                    dust_lines.append(
+                                        f"• <b>{sym}</b>: {total:.6f} = <code>${val:.2f}</code>"
+                                    )
+                            except (
+                                httpx.HTTPError,
+                                ValueError,
+                                KeyError,
+                                RuntimeError,
+                            ) as e:
+                                # S110 & BLE001 FIX: Log the specific exception instead of blind pass
+                                logger.debug(
+                                    "Failed to fetch ticker for %s: %s", sym, e
+                                )
+
+                    cash_ratio = (usdt_bal / total_val * 100) if total_val > 0 else 100
+
+                    text += f"💵 <b>Cash (USDT):</b> <code>${usdt_bal:.2f}</code>\n"
+                    text += f"📊 <b>Total Value:</b> <code>${total_val:.2f}</code>\n"
+                    text += f"🛡️ <b>Cash Ratio:</b> <code>{cash_ratio:.1f}%</code>\n\n"
+
+                    if lines:
+                        text += (
+                            "<b>📦 Active Holdings (≥$10):</b>\n"
+                            + "\n".join(lines)
+                            + "\n\n"
+                        )
+                    if dust_lines:
+                        text += (
+                            "️ <b>Dust Holdings (<$10):</b>\n"
+                            + "\n".join(dust_lines)
+                            + "\n"
+                        )
+                        text += "💡 Use <code>/liquidate_dust</code> to convert these to USDT.\n"
+                    if not lines and not dust_lines:
+                        text += "ℹ️ No crypto holdings. 100% Cash. Ready to snipe!\n"
+
+                except (httpx.HTTPError, ValueError, KeyError, RuntimeError) as e:
+                    text += f"❌ Error fetching portfolio: {e}"
+                    logger.error("Portfolio fetch error: %s", e)
+            else:
+                text += " Exchange service unavailable."
+            text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            markup = StandaloneKeyboards.balance_menu()
+
+        elif cmd == "/liquidate_dust":
+            text = "🧹 <b>DUST LIQUIDATION REPORT</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            if exchange_service:
+                try:
+                    balance = await exchange_service.fetch_account_balance()
+                    assets = balance.get("assets", {})
+                    sold = []
+                    skipped = []
+
+                    for sym, data in assets.items():
+                        if sym in ["USDT", "BNB"]:
+                            continue
+                        total = float(data.get("total", 0))
+                        if total > 0:
+                            try:
+                                ticker = await exchange_service.fetch_ticker(
+                                    f"{sym}/USDT"
+                                )
+                                price = float(ticker.get("last", 0))
+                                val = total * price
+
+                                if 1.0 <= val < 10.0:
+                                    await exchange_service.execute_order(
+                                        symbol=f"{sym}/USDT",
+                                        side="SELL",
+                                        quantity=total,
+                                        order_type="market",
+                                    )
+                                    sold.append(
+                                        f"• {sym}: {total:.6f} @ ${price:.2f} = ${val:.2f}"
+                                    )
+                                elif val < 1.0:
+                                    skipped.append(f"• {sym}: Too small (${val:.2f})")
+                            except (
+                                httpx.HTTPError,
+                                ValueError,
+                                KeyError,
+                                RuntimeError,
+                            ) as e:
+                                # S110 & BLE001 FIX: Log specific exception
+                                skipped.append(f"• {sym}: Error ({str(e)[:30]})")
+                                logger.warning("Liquidation error for %s: %s", sym, e)
+
+                    if sold:
+                        text += (
+                            "✅ <b>Successfully converted to USDT:</b>\n"
+                            + "\n".join(sold)
+                            + "\n"
+                        )
+                    if skipped:
+                        text += (
+                            "\n️ <b>Skipped/Failed:</b>\n" + "\n".join(skipped) + "\n"
+                        )
+                    if not sold and not skipped:
+                        text += (
+                            "ℹ️ No dust found (<$10) or all assets are significant.\n"
+                        )
+
+                    text += (
+                        "\n💡 <i>Proceeds are now available in your USDT balance.</i>"
+                    )
+                except (httpx.HTTPError, ValueError, KeyError, RuntimeError) as e:
+                    text += f"❌ Error during liquidation: {e}"
+                    logger.error("Liquidation error: %s", e)
+            else:
+                text += " Exchange service unavailable."
+            text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             markup = StandaloneKeyboards.balance_menu()
 
         elif cmd == "/status":
@@ -863,7 +994,6 @@ class TelegramPollingRunner:
                     logger.warning("Auto vault sweep exception: %s", ex)
 
             if status_text == "SKIPPED":
-                # Fixed escape sequence: \g -> \\g
                 status_line = f"🟡 <b>ACCUMULATING</b> (<code>${current_vault:,.2f}</code> / Min $0.50)"
                 note_line = f"\nℹ️ <i>Dana brankas saat ini terkumpul <b>${current_vault:,.2f} USDT</b>. Binance mewajibkan minimal setoran $0.50 USDT. Bot akan menyapu otomatis ke Simple Earn setelah terkumpul $\\ge $0.50.</i>\n"
             else:
@@ -883,13 +1013,9 @@ class TelegramPollingRunner:
             markup = StandaloneKeyboards.status_menu()
 
         else:
-            text = (
-                f"❓ Unknown command: <code>{cmd_text}</code>.\n\n"
-                "Please use the interactive console buttons below:"
-            )
+            text = f"❓ Unknown command: <code>{cmd_text}</code>.\n\nPlease use the interactive console buttons below:"
             markup = StandaloneKeyboards.main_menu()
 
-        # Send response
         if msg_id:
             edited = await self.edit_response(client, chat_id, msg_id, text, markup)
             if not edited:
@@ -898,11 +1024,9 @@ class TelegramPollingRunner:
             await self.send_response(client, chat_id, text, markup)
 
     async def start_polling(self) -> None:
-        """Main continuous long-polling loop with exponential backoff on error."""
         logger.info(
             "⚡ Initializing MONEY For HONEY Telegram Bot Runner with Channel Broadcast..."
         )
-
         async with httpx.AsyncClient() as client:
             try:
                 bot_info = await self.verify_bot(client)
@@ -921,11 +1045,8 @@ class TelegramPollingRunner:
                 )
                 return
 
-            # Register commands to Telegram Menu button
             await self.register_bot_commands(client)
-
             await self.clear_existing_webhook(client)
-
             logger.info(
                 "🚀 Polling loop started! Interactive buttons active. Type /menu or /start in Telegram..."
             )
@@ -981,13 +1102,8 @@ class TelegramPollingRunner:
 
 
 async def start_combined_services(runner: TelegramPollingRunner) -> None:
-    """Runs Telegram Bot Polling, Autonomous Trading Loop, and Periodic Channel Broadcast concurrently."""
-    tasks = []
+    tasks = [asyncio.create_task(runner.start_polling())]
 
-    # 1. Telegram Polling Task (Interactive Bot Commands)
-    tasks.append(asyncio.create_task(runner.start_polling()))
-
-    # 2. Autonomous Quantitative Trading Loop (Binance Market Scanning & Order Execution)
     if autonomous_trading_loop:
         logger.info(" Initializing Autonomous Trading Engine alongside Telegram Bot...")
         tasks.append(asyncio.create_task(autonomous_trading_loop()))
@@ -996,9 +1112,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
             "️ autonomous_trading_loop could not be imported; running in Bot-Only mode."
         )
 
-    # 3. Scheduled Channel Telemetry Heartbeat (Sends live heartbeat status to channel every 30 minutes)
     async def channel_telemetry_heartbeat():
-        # Initial boot announcement after 15 seconds
         await asyncio.sleep(15)
         while True:
             try:
@@ -1040,12 +1154,9 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
             ) as e:
                 logger.warning("Telemetry heartbeat broadcast error: %s", e)
 
-            # Broadcast every 45 minutes to keep channel updated without spamming
             await asyncio.sleep(45 * 60)
 
     tasks.append(asyncio.create_task(channel_telemetry_heartbeat()))
-
-    # Await all background tasks
     await asyncio.gather(*tasks)
 
 
