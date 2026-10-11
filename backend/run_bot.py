@@ -95,7 +95,6 @@ def generate_pnl_card(trades_data: list, total_pnl: float, total_pnl_pct: float)
         font_small = ImageFont.load_default()
 
     draw.text((20, 20), "MONEY For HONEY", fill=accent_color, font=font_large)
-    # DTZ005 FIX: Added datetime.timezone.utc
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%d %b %Y, %H:%M UTC"
     )
@@ -436,7 +435,6 @@ class TelegramPollingRunner:
         """Sends a generated image to Telegram."""
         url = f"{self.api_base}/sendPhoto"
         try:
-            # ASYNC230 FIX: Use aiofiles for non-blocking async file reading
             async with aiofiles.open(photo_path, "rb") as f:
                 file_content = await f.read()
 
@@ -520,14 +518,17 @@ class TelegramPollingRunner:
             )
             await self.answer_callback_query(client, cq_id, text="⚡ Executing...")
 
-            if chatops_bot and cq_data:
-                try:
-                    await chatops_bot.process_command(
-                        command_text=cq_data, sender_chat_id=chat_id, message_id=msg_id
-                    )
-                    return
-                except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
-                    logger.exception("Error in chatops_bot processing '%s'", cq_data)
+            # ========================================================================
+            # FIX: Bypass chatops_bot to ensure new standalone commands are executed
+            # ========================================================================
+            # if chatops_bot and cq_data:
+            #     try:
+            #         await chatops_bot.process_command(
+            #             command_text=cq_data, sender_chat_id=chat_id, message_id=msg_id
+            #         )
+            #         return
+            #     except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
+            #         logger.exception("Error in chatops_bot processing '%s'", cq_data)
 
             await self._process_standalone_command(client, cq_data, chat_id, msg_id)
             return
@@ -549,14 +550,17 @@ class TelegramPollingRunner:
             "📩 Received command from @%s (Chat ID: %s): '%s'", username, chat_id, text
         )
 
-        if chatops_bot:
-            try:
-                await chatops_bot.process_command(
-                    command_text=text, sender_chat_id=chat_id
-                )
-                return
-            except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
-                logger.exception("Error executing command '%s' via chatops_bot", text)
+        # ========================================================================
+        # FIX: Bypass chatops_bot to ensure new standalone commands are executed
+        # ========================================================================
+        # if chatops_bot:
+        #     try:
+        #         await chatops_bot.process_command(
+        #             command_text=text, sender_chat_id=chat_id
+        #         )
+        #         return
+        #     except (httpx.HTTPError, RuntimeError, ValueError, KeyError):
+        #         logger.exception("Error executing command '%s' via chatops_bot", text)
 
         await self._process_standalone_command(client, text, chat_id, None)
 
@@ -936,7 +940,6 @@ class TelegramPollingRunner:
                         )
                         await self.send_photo(client, chat_id, image_path, caption)
 
-                # BLE001 FIX: Replaced blind 'Exception' with specific exceptions
                 except (
                     RuntimeError,
                     ValueError,
