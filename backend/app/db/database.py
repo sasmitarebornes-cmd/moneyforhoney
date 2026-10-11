@@ -32,7 +32,6 @@ class DatabaseManager:
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=15.0)
         conn.row_factory = sqlite3.Row
-        # Enable WAL mode for high-concurrency read/write operations without locking
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA busy_timeout = 15000;")
@@ -43,7 +42,6 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                # 1. Trades table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS trades (
                         id TEXT PRIMARY KEY,
@@ -72,7 +70,6 @@ class DatabaseManager:
                     "CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at);"
                 )
 
-                # 2. Vault Ledger table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS vault_ledger (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +83,6 @@ class DatabaseManager:
                     )
                 """)
 
-                # 3. Equity & Circuit Breaker Snapshots
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS equity_snapshots (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,13 +96,12 @@ class DatabaseManager:
                     )
                 """)
                 conn.commit()
-                logger.info(f"Persistent database initialized at {self.db_path}")
-        except (sqlite3.Error, OSError) as e:
-            logger.exception("Failed to initialize SQLite database: %s", e)
+                logger.info("Persistent database initialized at %s", self.db_path)
+        except (sqlite3.Error, OSError):
+            # TRY401 FIX: Removed redundant 'e' argument. logging.exception automatically includes it.
+            logger.exception("Failed to initialize SQLite database")
 
     async def save_trade(self, trade_data: dict[str, Any]) -> bool:
-        """Inserts or updates a trade record."""
-
         def _execute():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -155,8 +150,6 @@ class DatabaseManager:
         return await asyncio.to_thread(_execute)
 
     async def get_active_trades(self) -> list[dict[str, Any]]:
-        """Retrieves all currently open positions."""
-
         def _query():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -178,8 +171,6 @@ class DatabaseManager:
         return await asyncio.to_thread(_query)
 
     async def get_closed_trades(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Retrieves recently closed positions with realized PnL and exit prices."""
-
         def _query():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -202,8 +193,6 @@ class DatabaseManager:
         return await asyncio.to_thread(_query)
 
     async def update_trade_sl(self, trade_id: str, new_sl: float) -> bool:
-        """Updates stop loss price level for an open trade."""
-
         def _execute():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -218,8 +207,6 @@ class DatabaseManager:
     async def close_trade(
         self, trade_id: str, exit_price: float, realized_pnl: float
     ) -> dict[str, Any] | None:
-        """Closes an active trade, updates realized PnL, and returns the updated record."""
-
         def _close():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -249,8 +236,6 @@ class DatabaseManager:
         return await asyncio.to_thread(_close)
 
     async def record_vault_distribution(self, record: dict[str, Any]) -> bool:
-        """Records profit waterfall distribution to persistent ledger."""
-
         def _execute():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -279,8 +264,6 @@ class DatabaseManager:
         return await asyncio.to_thread(_execute)
 
     async def get_latest_equity_snapshot(self) -> dict[str, Any] | None:
-        """Recovers daily peak and starting equity across restarts."""
-
         def _query():
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -300,8 +283,6 @@ class DatabaseManager:
         circuit_breaker_active: bool,
         trip_reason: str | None = None,
     ) -> bool:
-        """Persists latest daily equity and circuit breaker state."""
-
         def _update():
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             now_str = datetime.now(timezone.utc).isoformat()

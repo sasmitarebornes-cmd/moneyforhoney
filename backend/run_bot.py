@@ -2,24 +2,32 @@
 """
 MONEY For HONEY — Dedicated Telegram Bot Long-Polling Runner.
 Supports real-time text commands, 2-way callback queries, and Instant Channel Broadcasting.
-NEW: Added Portfolio Health Check & Dust Liquidation features.
-
-How to run:
-    python run_bot.py
+NEW: Added Portfolio Health Check, Dust Liquidation, Real-time PnL, and Auto-Generate PnL Card.
 """
 
 # Standard library
 import asyncio
+import datetime
 import logging
 import os
 import sys
+import uuid
 from typing import Any
 
 # Third-party
+import aiofiles
 import httpx
 from dotenv import load_dotenv
 
-# Auto-locate and load .env file from multiple parent directory levels
+# Image generation (Pillow)
+try:
+    from PIL import Image, ImageDraw, ImageFont
+
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+# Auto-locate and load .env file
 CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 POSSIBLE_ENV_PATHS = [
     os.path.join(CURRENT_FILE_DIR, ".env"),
@@ -51,6 +59,101 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("money_for_honey.bot_runner")
 
 
+# ==========================================================
+# PnL Card Generator Function
+# ==========================================================
+def generate_pnl_card(trades_data: list, total_pnl: float, total_pnl_pct: float) -> str:
+    """Generates a professional PnL summary card image."""
+    width = 600
+    header_height = 120
+    row_height = 60
+    footer_height = 60
+    height = header_height + (len(trades_data) * row_height) + footer_height
+
+    bg_color = (15, 23, 42)  # slate-900
+    text_color = (226, 232, 240)  # slate-200
+    accent_color = (245, 158, 11)  # amber-500
+    profit_color = (16, 185, 129)  # emerald-500
+    loss_color = (239, 68, 68)  # red-500
+
+    img = Image.new("RGB", (width, height), color=bg_color)
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font_large = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32
+        )
+        font_medium = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20
+        )
+        font_small = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16
+        )
+    except OSError:
+        font_large = ImageFont.load_default()
+        font_medium = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    draw.text((20, 20), "MONEY For HONEY", fill=accent_color, font=font_large)
+    # DTZ005 FIX: Added datetime.timezone.utc
+    now_str = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%d %b %Y, %H:%M UTC"
+    )
+    draw.text(
+        (20, 65), f"Portfolio Snapshot • {now_str}", fill=text_color, font=font_small
+    )
+
+    draw.line([(20, 100), (580, 100)], fill=(51, 65, 85), width=2)
+
+    pnl_color = profit_color if total_pnl >= 0 else loss_color
+    pnl_sign = "+" if total_pnl >= 0 else ""
+    total_pnl_text = f"{pnl_sign}${total_pnl:.2f} ({pnl_sign}{total_pnl_pct:.2f}%)"
+
+    draw.text((20, 115), "Total Unrealized PnL", fill=text_color, font=font_small)
+    draw.text((20, 145), total_pnl_text, fill=pnl_color, font=font_large)
+
+    y_offset = 210
+    for i, trade in enumerate(trades_data[:5]):
+        symbol = trade.get("symbol", "UNKNOWN")
+        entry = float(trade.get("entry_price", 0))
+        current = float(trade.get("current_price", entry))
+        pnl = float(trade.get("pnl", 0))
+        pnl_pct = float(trade.get("pnl_pct", 0))
+
+        t_pnl_color = profit_color if pnl >= 0 else loss_color
+        t_pnl_sign = "+" if pnl >= 0 else ""
+
+        side = "LONG" if trade.get("side", "BUY").upper() == "BUY" else "SHORT"
+        draw.text(
+            (20, y_offset), f"{symbol} ({side})", fill=text_color, font=font_medium
+        )
+        draw.text(
+            (20, y_offset + 25),
+            f"Entry: ${entry:.2f}  •  Now: ${current:.2f}",
+            fill=(148, 163, 184),
+            font=font_small,
+        )
+
+        pnl_text = f"{t_pnl_sign}${pnl:.2f} ({t_pnl_sign}{pnl_pct:.1f}%)"
+        draw.text((420, y_offset + 5), pnl_text, fill=t_pnl_color, font=font_medium)
+
+        y_offset += row_height
+
+    draw.line([(20, height - 50), (580, height - 50)], fill=(51, 65, 85), width=2)
+    draw.text(
+        (20, height - 35),
+        "Autonomous Quantitative Trading Engine",
+        fill=(100, 116, 139),
+        font=font_small,
+    )
+
+    filename = f"pnl_card_{uuid.uuid4().hex[:8]}.png"
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    img.save(filepath, "PNG")
+
+    return filepath
+
+
 class StandaloneKeyboards:
     @staticmethod
     def main_menu() -> dict[str, Any]:
@@ -61,7 +164,7 @@ class StandaloneKeyboards:
                     {"text": "📊 Live Telemetry", "callback_data": "/status"},
                 ],
                 [
-                    {"text": " Active Trades", "callback_data": "/positions"},
+                    {"text": "📈 Active Trades", "callback_data": "/positions"},
                     {"text": "🎯 Take Profit Logs", "callback_data": "/tp"},
                 ],
                 [
@@ -69,7 +172,7 @@ class StandaloneKeyboards:
                     {"text": "⚡ Radar Signals", "callback_data": "/radar"},
                 ],
                 [
-                    {"text": " Portfolio Health", "callback_data": "/portfolio"},
+                    {"text": "💼 Portfolio Health", "callback_data": "/portfolio"},
                     {"text": "🧹 Liquidate Dust", "callback_data": "/liquidate_dust"},
                 ],
                 [
@@ -79,7 +182,7 @@ class StandaloneKeyboards:
                 [
                     {"text": "✅ Resume Engine", "callback_data": "/resume"},
                     {
-                        "text": " Emergency Stop",
+                        "text": "🚨 Emergency Stop",
                         "callback_data": "/confirm_emergency_stop",
                     },
                 ],
@@ -98,7 +201,7 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Balance", "callback_data": "/balance"},
-                    {"text": " Portfolio", "callback_data": "/portfolio"},
+                    {"text": "💼 Portfolio", "callback_data": "/portfolio"},
                 ],
                 [
                     {"text": "🧹 Liquidate Dust", "callback_data": "/liquidate_dust"},
@@ -113,10 +216,10 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Telemetry", "callback_data": "/status"},
-                    {"text": " View Positions", "callback_data": "/positions"},
+                    {"text": "👁️ View Positions", "callback_data": "/positions"},
                 ],
                 [
-                    {"text": " Broadcast to Channel", "callback_data": "/broadcast"},
+                    {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
                     {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
@@ -128,11 +231,11 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Positions", "callback_data": "/positions"},
-                    {"text": " Liquidate All", "callback_data": "/confirm_close_all"},
+                    {"text": "📊 Generate PnL Card", "callback_data": "/pnl"},
                 ],
                 [
-                    {"text": "📊 Live Telemetry", "callback_data": "/status"},
-                    {"text": " Main Menu", "callback_data": "/menu"},
+                    {"text": "🛑 Liquidate All", "callback_data": "/confirm_close_all"},
+                    {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
         }
@@ -143,7 +246,7 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {
-                        "text": " CONFIRM EMERGENCY STOP",
+                        "text": "🚨 CONFIRM EMERGENCY STOP",
                         "callback_data": "/emergency_stop",
                     },
                 ],
@@ -161,7 +264,10 @@ class StandaloneKeyboards:
                     {"text": "🛑 CONFIRM LIQUIDATE ALL", "callback_data": "/close_all"},
                 ],
                 [
-                    {"text": " Cancel & Keep Positions", "callback_data": "/positions"},
+                    {
+                        "text": "❌ Cancel & Keep Positions",
+                        "callback_data": "/positions",
+                    },
                 ],
             ]
         }
@@ -171,7 +277,7 @@ class StandaloneKeyboards:
         return {
             "inline_keyboard": [
                 [
-                    {"text": " Telemetry Status", "callback_data": "/status"},
+                    {"text": "📊 Telemetry Status", "callback_data": "/status"},
                     {"text": "🏠 Main Dashboard", "callback_data": "/menu"},
                 ]
             ]
@@ -244,11 +350,12 @@ class TelegramPollingRunner:
                 {"command": "status", "description": "📊 Live Quantitative Telemetry"},
                 {
                     "command": "positions",
-                    "description": " Active Trades & SL/TP Tracker",
+                    "description": "📈 Active Trades & Live PnL Tracker",
                 },
+                {"command": "pnl", "description": "📊 Generate Visual PnL Card"},
                 {
                     "command": "tp",
-                    "description": " Take Profit & Closed Trades History",
+                    "description": "🎯 Take Profit & Closed Trades History",
                 },
                 {"command": "history", "description": "📜 Completed Trades Ledger"},
                 {
@@ -261,7 +368,7 @@ class TelegramPollingRunner:
                 },
                 {
                     "command": "radar",
-                    "description": " Alpha & Confluence Radar Signals",
+                    "description": "⚡ Alpha & Confluence Radar Signals",
                 },
                 {"command": "help", "description": "📖 Operator Manual & Guide"},
                 {
@@ -319,6 +426,33 @@ class TelegramPollingRunner:
             logger.error("Failed sending message to chat %s: %s", chat_id, err)
             return False
 
+    async def send_photo(
+        self,
+        client: httpx.AsyncClient,
+        chat_id: str,
+        photo_path: str,
+        caption: str = "",
+    ) -> bool:
+        """Sends a generated image to Telegram."""
+        url = f"{self.api_base}/sendPhoto"
+        try:
+            # ASYNC230 FIX: Use aiofiles for non-blocking async file reading
+            async with aiofiles.open(photo_path, "rb") as f:
+                file_content = await f.read()
+
+            files = {"photo": (os.path.basename(photo_path), file_content, "image/png")}
+            data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
+            res = await client.post(url, data=data, files=files, timeout=15.0)
+
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+            return res.status_code == 200
+        except (httpx.HTTPError, OSError) as err:
+            logger.error("Failed sending photo to chat %s: %s", chat_id, err)
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+            return False
+
     async def edit_response(
         self,
         client: httpx.AsyncClient,
@@ -347,7 +481,7 @@ class TelegramPollingRunner:
         self,
         client: httpx.AsyncClient,
         callback_query_id: str,
-        text: str = " Executing...",
+        text: str = "⚡ Executing...",
     ) -> bool:
         url = f"{self.api_base}/answerCallbackQuery"
         try:
@@ -481,7 +615,6 @@ class TelegramPollingRunner:
                 if crypto_assets
                 else ""
             )
-
             text = (
                 "💰 <b>BINANCE SPOT WALLET BALANCE (LIVE)</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -502,8 +635,7 @@ class TelegramPollingRunner:
                     assets = balance.get("assets", {})
                     usdt_bal = float(assets.get("USDT", {}).get("total", 0))
                     total_val = usdt_bal
-                    lines = []
-                    dust_lines = []
+                    lines, dust_lines = [], []
 
                     for sym, data in assets.items():
                         if sym == "USDT":
@@ -531,13 +663,11 @@ class TelegramPollingRunner:
                                 KeyError,
                                 RuntimeError,
                             ) as e:
-                                # S110 & BLE001 FIX: Log the specific exception instead of blind pass
                                 logger.debug(
                                     "Failed to fetch ticker for %s: %s", sym, e
                                 )
 
                     cash_ratio = (usdt_bal / total_val * 100) if total_val > 0 else 100
-
                     text += f"💵 <b>Cash (USDT):</b> <code>${usdt_bal:.2f}</code>\n"
                     text += f"📊 <b>Total Value:</b> <code>${total_val:.2f}</code>\n"
                     text += f"🛡️ <b>Cash Ratio:</b> <code>{cash_ratio:.1f}%</code>\n\n"
@@ -550,19 +680,18 @@ class TelegramPollingRunner:
                         )
                     if dust_lines:
                         text += (
-                            "️ <b>Dust Holdings (<$10):</b>\n"
+                            "⚠️ <b>Dust Holdings (<$10):</b>\n"
                             + "\n".join(dust_lines)
                             + "\n"
                         )
                         text += "💡 Use <code>/liquidate_dust</code> to convert these to USDT.\n"
                     if not lines and not dust_lines:
                         text += "ℹ️ No crypto holdings. 100% Cash. Ready to snipe!\n"
-
                 except (httpx.HTTPError, ValueError, KeyError, RuntimeError) as e:
                     text += f"❌ Error fetching portfolio: {e}"
                     logger.error("Portfolio fetch error: %s", e)
             else:
-                text += " Exchange service unavailable."
+                text += "⚠️ Exchange service unavailable."
             text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             markup = StandaloneKeyboards.balance_menu()
 
@@ -572,8 +701,7 @@ class TelegramPollingRunner:
                 try:
                     balance = await exchange_service.fetch_account_balance()
                     assets = balance.get("assets", {})
-                    sold = []
-                    skipped = []
+                    sold, skipped = [], []
 
                     for sym, data in assets.items():
                         if sym in ["USDT", "BNB"]:
@@ -605,7 +733,6 @@ class TelegramPollingRunner:
                                 KeyError,
                                 RuntimeError,
                             ) as e:
-                                # S110 & BLE001 FIX: Log specific exception
                                 skipped.append(f"• {sym}: Error ({str(e)[:30]})")
                                 logger.warning("Liquidation error for %s: %s", sym, e)
 
@@ -617,13 +744,12 @@ class TelegramPollingRunner:
                         )
                     if skipped:
                         text += (
-                            "\n️ <b>Skipped/Failed:</b>\n" + "\n".join(skipped) + "\n"
+                            "\n⚠️ <b>Skipped/Failed:</b>\n" + "\n".join(skipped) + "\n"
                         )
                     if not sold and not skipped:
                         text += (
                             "ℹ️ No dust found (<$10) or all assets are significant.\n"
                         )
-
                     text += (
                         "\n💡 <i>Proceeds are now available in your USDT balance.</i>"
                     )
@@ -631,7 +757,7 @@ class TelegramPollingRunner:
                     text += f"❌ Error during liquidation: {e}"
                     logger.error("Liquidation error: %s", e)
             else:
-                text += " Exchange service unavailable."
+                text += "⚠️ Exchange service unavailable."
             text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             markup = StandaloneKeyboards.balance_menu()
 
@@ -685,15 +811,147 @@ class TelegramPollingRunner:
                 ]
                 for idx, t in enumerate(active_trades[:6], start=1):
                     side_emoji = (
-                        "🟢 LONG" if t.get("side", "").upper() == "BUY" else " SHORT"
+                        "🟢 LONG" if t.get("side", "").upper() == "BUY" else "🔴 SHORT"
                     )
+                    entry_price = float(t.get("entry_price", 0.0))
+                    qty = float(t.get("quantity", 0.0))
+                    symbol = t.get("symbol", "UNKNOWN")
+                    current_price = entry_price
+
+                    if exchange_service:
+                        try:
+                            ticker = await exchange_service.fetch_ticker(symbol)
+                            current_price = float(ticker.get("last", entry_price))
+                        except (
+                            httpx.HTTPError,
+                            ValueError,
+                            KeyError,
+                            RuntimeError,
+                        ) as e:
+                            logger.warning(
+                                "Failed to fetch live price for %s: %s", symbol, e
+                            )
+
+                    pnl = (current_price - entry_price) * qty
+                    pnl_pct = (
+                        ((current_price - entry_price) / entry_price * 100)
+                        if entry_price > 0
+                        else 0.0
+                    )
+
+                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                    pnl_sign = "+" if pnl >= 0 else ""
+
                     lines.append(
-                        f"{idx}. <b>{t['symbol']}</b> | {side_emoji}\n"
-                        f"   • Entry: <code>${t['entry_price']:,.2f}</code> | Qty: <code>{t['quantity']}</code>\n"
-                        f"   • Stop-Loss: <code>${t.get('stop_loss', 0.0):,.2f}</code> | TP: <code>${t.get('take_profit', 0.0):,.2f}</code>"
+                        f"{idx}. <b>{symbol}</b> | {side_emoji}\n"
+                        f"   • Entry: <code>${entry_price:,.2f}</code> | Now: <code>${current_price:,.2f}</code>\n"
+                        f"   • PnL: {pnl_emoji} <code>{pnl_sign}${pnl:,.2f} ({pnl_sign}{pnl_pct:.2f}%)</code>\n"
+                        f"   • SL: <code>${t.get('stop_loss', 0.0):,.2f}</code> | TP: <code>${t.get('take_profit', 0.0):,.2f}</code>"
                     )
                 text = "\n".join(lines)
             markup = StandaloneKeyboards.positions_menu()
+
+        elif cmd == "/pnl":
+            active_trades = []
+            if db_manager:
+                try:
+                    active_trades = await db_manager.get_active_trades()
+                except (RuntimeError, ValueError, OSError, KeyError) as err:
+                    logger.debug("Active trades fetch exception: %s", err)
+
+            if not active_trades:
+                text = "ℹ️ <b>No active positions</b> to generate a PnL card."
+                await self.send_response(
+                    client, chat_id, text, StandaloneKeyboards.main_menu()
+                )
+            else:
+                try:
+                    trades_for_card, total_pnl, total_invested = [], 0.0, 0.0
+
+                    for t in active_trades[:5]:
+                        entry_price = float(t.get("entry_price", 0.0))
+                        qty = float(t.get("quantity", 0.0))
+                        symbol = t.get("symbol", "UNKNOWN")
+                        current_price = entry_price
+
+                        if exchange_service:
+                            try:
+                                ticker = await exchange_service.fetch_ticker(symbol)
+                                current_price = float(ticker.get("last", entry_price))
+                            except (
+                                httpx.HTTPError,
+                                ValueError,
+                                KeyError,
+                                RuntimeError,
+                            ) as e:
+                                logger.warning(
+                                    "Failed to fetch live price for %s: %s", symbol, e
+                                )
+
+                        pnl = (current_price - entry_price) * qty
+                        pnl_pct = (
+                            ((current_price - entry_price) / entry_price * 100)
+                            if entry_price > 0
+                            else 0.0
+                        )
+
+                        total_pnl += pnl
+                        total_invested += entry_price * qty
+
+                        trades_for_card.append(
+                            {
+                                "symbol": symbol,
+                                "side": t.get("side", "BUY"),
+                                "entry_price": entry_price,
+                                "current_price": current_price,
+                                "pnl": pnl,
+                                "pnl_pct": pnl_pct,
+                            }
+                        )
+
+                    total_pnl_pct = (
+                        (total_pnl / total_invested * 100)
+                        if total_invested > 0
+                        else 0.0
+                    )
+
+                    if not PIL_AVAILABLE:
+                        await self.send_response(
+                            client,
+                            chat_id,
+                            "❌ Pillow library not installed. Cannot generate PnL card.",
+                            StandaloneKeyboards.positions_menu(),
+                        )
+                    else:
+                        logger.info(
+                            "Generating PnL card for %d trades...", len(trades_for_card)
+                        )
+                        image_path = generate_pnl_card(
+                            trades_for_card, total_pnl, total_pnl_pct
+                        )
+
+                        caption = (
+                            f"📊 <b>Live Portfolio PnL Snapshot</b>\n"
+                            f"Total Unrealized: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f} ({'+' if total_pnl >= 0 else ''}{total_pnl_pct:.2f}%)</code>"
+                        )
+                        await self.send_photo(client, chat_id, image_path, caption)
+
+                # BLE001 FIX: Replaced blind 'Exception' with specific exceptions
+                except (
+                    RuntimeError,
+                    ValueError,
+                    OSError,
+                    KeyError,
+                    httpx.HTTPError,
+                ) as e:
+                    logger.error("Error generating PnL card: %s", e)
+                    await self.send_response(
+                        client,
+                        chat_id,
+                        "❌ Error generating PnL card.",
+                        StandaloneKeyboards.positions_menu(),
+                    )
+            return
 
         elif cmd in ["/tp", "/history"]:
             closed_trades = []
@@ -711,9 +969,9 @@ class TelegramPollingRunner:
 
             if not closed_trades:
                 text = (
-                    " <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
+                    "🎯 <b>MONEY For HONEY — Take Profit & History (LIVE)</b>\n"
                     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
+                    "ℹ️ <i>Belum ada posisi yang selesai ditutup / TP pada sesi saat ini.</i>\n\n"
                     "⚡ <b>Engine Status:</b> Mengawasi market Binance Spot secara live.\n"
                     "Begitu harga menyentuh target Take Profit, bot otomatis mengeksekusi penutupan order di bursa dan mendistribusikan profit waterfall!"
                 )
@@ -751,7 +1009,7 @@ class TelegramPollingRunner:
                     )
                     regime = market_scanner.classify_market("BTC/USDT", live_ohlcv)
                     text = (
-                        " <b>MONEY For HONEY — Live Market Radar</b>\n"
+                        "⚡ <b>MONEY For HONEY — Live Market Radar</b>\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"• <b>Symbol:</b> <code>{regime.symbol}</code> (15m Timeframe)\n"
                         f"• <b>Real-Time Price:</b> <code>${regime.current_price:,.2f}</code>\n"
@@ -824,7 +1082,7 @@ class TelegramPollingRunner:
                 "📢 <b>MONEY For HONEY — OFFICIAL TELEMETRY UPDATE</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"⚡ <b>Engine Health:</b> {breaker_icon}\n"
-                f" <b>Active Positions:</b> <code>{active_count} Open Strategies</code>\n"
+                f"📈 <b>Active Positions:</b> <code>{active_count} Open Strategies</code>\n"
                 f"📉 <b>Daily Drawdown:</b> <code>{drawdown_str}</code> (Max Risk Cap: 5.0%)\n"
                 f"🏦 <b>Vault Reserves:</b> <code>${summary['total_vault_equity']:,.2f} USDT</code>\n"
                 f"📈 <b>Passive APY (Binance Earn):</b> <code>{summary['estimated_apy_pct']}%</code>\n"
@@ -971,10 +1229,12 @@ class TelegramPollingRunner:
             markup = StandaloneKeyboards.back_to_menu()
 
         elif cmd == "/harvest":
-            staked_amount = 0.0
-            prod_type = "Flexible Auto-Compound"
-            status_text = "SUCCESS"
-            current_vault = 0.0
+            staked_amount, prod_type, status_text, current_vault = (
+                0.0,
+                "Flexible Auto-Compound",
+                "SUCCESS",
+                0.0,
+            )
             if vault_manager:
                 try:
                     summary = vault_manager.get_vault_summary()
@@ -1105,11 +1365,13 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
     tasks = [asyncio.create_task(runner.start_polling())]
 
     if autonomous_trading_loop:
-        logger.info(" Initializing Autonomous Trading Engine alongside Telegram Bot...")
+        logger.info(
+            "🧠 Initializing Autonomous Trading Engine alongside Telegram Bot..."
+        )
         tasks.append(asyncio.create_task(autonomous_trading_loop()))
     else:
         logger.warning(
-            "️ autonomous_trading_loop could not be imported; running in Bot-Only mode."
+            "⚠️ autonomous_trading_loop could not be imported; running in Bot-Only mode."
         )
 
     async def channel_telemetry_heartbeat():
@@ -1118,7 +1380,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
             try:
                 if notifier:
                     logger.info(
-                        " Broadcasting routine telemetry heartbeat to channel & operator..."
+                        "📡 Broadcasting routine telemetry heartbeat to channel & operator..."
                     )
                     if hasattr(notifier, "broadcast_to_community"):
                         await notifier.broadcast_to_community(
