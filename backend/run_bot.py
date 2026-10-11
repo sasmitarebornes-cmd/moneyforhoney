@@ -60,58 +60,73 @@ logger = logging.getLogger("money_for_honey.bot_runner")
 
 
 # ==========================================================
-# PnL Card Generator Function
+# PnL Card Generator Function (IMPROVED - Dynamic Height)
 # ==========================================================
 def generate_pnl_card(trades_data: list, total_pnl: float, total_pnl_pct: float) -> str:
-    """Generates a professional PnL summary card image."""
+    """Generates a professional PnL summary card image with dynamic height."""
+    # Dynamic height calculation based on number of trades
     width = 600
-    header_height = 120
-    row_height = 60
-    footer_height = 60
-    height = header_height + (len(trades_data) * row_height) + footer_height
+    header_height = 140
+    row_height = 70  # Increased row height for better readability
+    footer_height = 50
+    # Calculate height dynamically with minimum of 1 trade
+    num_trades = max(len(trades_data[:5]), 1)
+    height = header_height + (num_trades * row_height) + footer_height
 
     bg_color = (15, 23, 42)  # slate-900
     text_color = (226, 232, 240)  # slate-200
     accent_color = (245, 158, 11)  # amber-500
     profit_color = (16, 185, 129)  # emerald-500
     loss_color = (239, 68, 68)  # red-500
+    border_color = (51, 65, 85)  # slate-700
 
     img = Image.new("RGB", (width, height), color=bg_color)
     draw = ImageDraw.Draw(img)
 
+    # Load fonts with fallback
     try:
         font_large = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28
         )
         font_medium = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18
         )
         font_small = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14
+        )
+        font_title = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32
         )
     except OSError:
         font_large = ImageFont.load_default()
         font_medium = ImageFont.load_default()
         font_small = ImageFont.load_default()
+        font_title = ImageFont.load_default()
 
-    draw.text((20, 20), "MONEY For HONEY", fill=accent_color, font=font_large)
+    # Header Section
+    draw.text((20, 15), "MONEY For HONEY", fill=accent_color, font=font_title)
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%d %b %Y, %H:%M UTC"
     )
     draw.text(
-        (20, 65), f"Portfolio Snapshot • {now_str}", fill=text_color, font=font_small
+        (20, 55), f"Portfolio Snapshot • {now_str}", fill=text_color, font=font_small
     )
 
-    draw.line([(20, 100), (580, 100)], fill=(51, 65, 85), width=2)
+    # Separator line after header
+    draw.line([(20, 90), (580, 90)], fill=border_color, width=2)
 
+    # Total PnL Section
     pnl_color = profit_color if total_pnl >= 0 else loss_color
     pnl_sign = "+" if total_pnl >= 0 else ""
     total_pnl_text = f"{pnl_sign}${total_pnl:.2f} ({pnl_sign}{total_pnl_pct:.2f}%)"
 
-    draw.text((20, 115), "Total Unrealized PnL", fill=text_color, font=font_small)
-    draw.text((20, 145), total_pnl_text, fill=pnl_color, font=font_large)
+    draw.text((20, 100), "Total Unrealized PnL", fill=text_color, font=font_small)
+    draw.text((20, 115), total_pnl_text, fill=pnl_color, font=font_large)
 
-    y_offset = 210
+    # Trades Section - Start position
+    y_offset = 160
+
+    # Draw each trade
     for i, trade in enumerate(trades_data[:5]):
         symbol = trade.get("symbol", "UNKNOWN")
         entry = float(trade.get("entry_price", 0))
@@ -123,29 +138,55 @@ def generate_pnl_card(trades_data: list, total_pnl: float, total_pnl_pct: float)
         t_pnl_sign = "+" if pnl >= 0 else ""
 
         side = "LONG" if trade.get("side", "BUY").upper() == "BUY" else "SHORT"
-        draw.text(
-            (20, y_offset), f"{symbol} ({side})", fill=text_color, font=font_medium
+
+        # Row background (alternating subtle color)
+        row_bg_color = (20, 28, 48) if i % 2 == 0 else (18, 25, 45)
+        draw.rectangle(
+            [(15, y_offset - 5), (585, y_offset + row_height - 5)],
+            fill=row_bg_color,
         )
+
+        # Symbol and Side
+        draw.text((25, y_offset), f"{symbol}", fill=text_color, font=font_medium)
+        draw.text((140, y_offset), f"({side})", fill=accent_color, font=font_small)
+
+        # Prices
         draw.text(
-            (20, y_offset + 25),
+            (25, y_offset + 28),
             f"Entry: ${entry:.2f}  •  Now: ${current:.2f}",
             fill=(148, 163, 184),
             font=font_small,
         )
 
+        # PnL (Right aligned)
         pnl_text = f"{t_pnl_sign}${pnl:.2f} ({t_pnl_sign}{pnl_pct:.1f}%)"
-        draw.text((420, y_offset + 5), pnl_text, fill=t_pnl_color, font=font_medium)
+        # Calculate position for right alignment
+        pnl_bbox = draw.textbbox((0, 0), pnl_text, font=font_medium)
+        pnl_width = pnl_bbox[2] - pnl_bbox[0]
+        pnl_x = 575 - pnl_width
+
+        draw.text((pnl_x, y_offset + 5), pnl_text, fill=t_pnl_color, font=font_medium)
+
+        # Separator line between trades (except last one)
+        if i < len(trades_data[:5]) - 1:
+            draw.line(
+                [(20, y_offset + row_height - 8), (580, y_offset + row_height - 8)],
+                fill=border_color,
+                width=1,
+            )
 
         y_offset += row_height
 
-    draw.line([(20, height - 50), (580, height - 50)], fill=(51, 65, 85), width=2)
+    # Footer
+    draw.line([(20, height - 40), (580, height - 40)], fill=border_color, width=2)
     draw.text(
-        (20, height - 35),
+        (20, height - 30),
         "Autonomous Quantitative Trading Engine",
         fill=(100, 116, 139),
         font=font_small,
     )
 
+    # Save Image
     filename = f"pnl_card_{uuid.uuid4().hex[:8]}.png"
     filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     img.save(filepath, "PNG")
@@ -164,18 +205,18 @@ class StandaloneKeyboards:
                 ],
                 [
                     {"text": "📈 Active Trades", "callback_data": "/positions"},
-                    {"text": "🎯 Take Profit Logs", "callback_data": "/tp"},
+                    {"text": " Take Profit Logs", "callback_data": "/tp"},
                 ],
                 [
                     {"text": "🏦 Vault & Harvest", "callback_data": "/harvest"},
                     {"text": "⚡ Radar Signals", "callback_data": "/radar"},
                 ],
                 [
-                    {"text": "💼 Portfolio Health", "callback_data": "/portfolio"},
+                    {"text": " Portfolio Health", "callback_data": "/portfolio"},
                     {"text": "🧹 Liquidate Dust", "callback_data": "/liquidate_dust"},
                 ],
                 [
-                    {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
+                    {"text": " Broadcast to Channel", "callback_data": "/broadcast"},
                     {"text": "📖 Manual / Help", "callback_data": "/help"},
                 ],
                 [
@@ -199,7 +240,7 @@ class StandaloneKeyboards:
         return {
             "inline_keyboard": [
                 [
-                    {"text": "🔄 Refresh Balance", "callback_data": "/balance"},
+                    {"text": " Refresh Balance", "callback_data": "/balance"},
                     {"text": "💼 Portfolio", "callback_data": "/portfolio"},
                 ],
                 [
@@ -218,7 +259,7 @@ class StandaloneKeyboards:
                     {"text": "👁️ View Positions", "callback_data": "/positions"},
                 ],
                 [
-                    {"text": "📢 Broadcast to Channel", "callback_data": "/broadcast"},
+                    {"text": " Broadcast to Channel", "callback_data": "/broadcast"},
                     {"text": "🏠 Main Menu", "callback_data": "/menu"},
                 ],
             ]
@@ -230,7 +271,7 @@ class StandaloneKeyboards:
             "inline_keyboard": [
                 [
                     {"text": "🔄 Refresh Positions", "callback_data": "/positions"},
-                    {"text": "📊 Generate PnL Card", "callback_data": "/pnl"},
+                    {"text": " Generate PnL Card", "callback_data": "/pnl"},
                 ],
                 [
                     {"text": "🛑 Liquidate All", "callback_data": "/confirm_close_all"},
@@ -349,7 +390,7 @@ class TelegramPollingRunner:
                 {"command": "status", "description": "📊 Live Quantitative Telemetry"},
                 {
                     "command": "positions",
-                    "description": "📈 Active Trades & Live PnL Tracker",
+                    "description": " Active Trades & Live PnL Tracker",
                 },
                 {"command": "pnl", "description": "📊 Generate Visual PnL Card"},
                 {
@@ -511,7 +552,7 @@ class TelegramPollingRunner:
             username = from_user.get("username", "Unknown")
 
             logger.info(
-                "🔘 Button clicked by @%s (Chat ID: %s): '%s'",
+                " Button clicked by @%s (Chat ID: %s): '%s'",
                 username,
                 chat_id,
                 cq_data,
@@ -580,7 +621,7 @@ class TelegramPollingRunner:
                 "🐝 <b>MONEY For HONEY — Operator Control Center</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 "Autonomous Quantitative Trading & Self-Wealth Engine.\n\n"
-                f'📢 <b>Official Channel:</b> <a href="https://t.me/{self.channel_id.replace("@", "")}">{self.channel_id}</a>\n\n'
+                f' <b>Official Channel:</b> <a href="https://t.me/{self.channel_id.replace("@", "")}">{self.channel_id}</a>\n\n'
                 "👇 <b>Pilih aksi pada tombol interaktif di bawah:</b>"
             )
             markup = StandaloneKeyboards.main_menu()
@@ -688,7 +729,7 @@ class TelegramPollingRunner:
                             + "\n".join(dust_lines)
                             + "\n"
                         )
-                        text += "💡 Use <code>/liquidate_dust</code> to convert these to USDT.\n"
+                        text += " Use <code>/liquidate_dust</code> to convert these to USDT.\n"
                     if not lines and not dust_lines:
                         text += "ℹ️ No crypto holdings. 100% Cash. Ready to snipe!\n"
                 except (httpx.HTTPError, ValueError, KeyError, RuntimeError) as e:
@@ -754,9 +795,7 @@ class TelegramPollingRunner:
                         text += (
                             "ℹ️ No dust found (<$10) or all assets are significant.\n"
                         )
-                    text += (
-                        "\n💡 <i>Proceeds are now available in your USDT balance.</i>"
-                    )
+                    text += "\n <i>Proceeds are now available in your USDT balance.</i>"
                 except (httpx.HTTPError, ValueError, KeyError, RuntimeError) as e:
                     text += f"❌ Error during liquidation: {e}"
                     logger.error("Liquidation error: %s", e)
@@ -769,7 +808,7 @@ class TelegramPollingRunner:
             breaker_icon = (
                 "🚨 TRIPPED (HALTED)"
                 if (risk_engine and risk_engine.circuit_breaker_active)
-                else "🟢 ACTIVE (SAFE)"
+                else " ACTIVE (SAFE)"
             )
             active_count = 0
             if db_manager:
@@ -783,7 +822,7 @@ class TelegramPollingRunner:
                 "🐝 <b>MONEY For HONEY — Telemetry Status (LIVE)</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"⚡ <b>Engine Status:</b> {breaker_icon}\n"
-                "📉 <b>Daily Drawdown:</b> <code>0.00%</code> (Cap: 5.0%)\n"
+                " <b>Daily Drawdown:</b> <code>0.00%</code> (Cap: 5.0%)\n"
                 f"🎯 <b>Active Positions:</b> <code>{active_count} Open</code>\n"
                 "🏦 <b>Binance Simple Earn:</b> <code>Flexible USDT Compounding</code>\n"
                 "📈 <b>Passive Yield:</b> <code>7.2% APY</code>\n"
@@ -843,7 +882,7 @@ class TelegramPollingRunner:
                         else 0.0
                     )
 
-                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                    pnl_emoji = "" if pnl >= 0 else "🔴"
                     pnl_sign = "+" if pnl >= 0 else ""
 
                     lines.append(
@@ -935,7 +974,7 @@ class TelegramPollingRunner:
                         )
 
                         caption = (
-                            f"📊 <b>Live Portfolio PnL Snapshot</b>\n"
+                            f" <b>Live Portfolio PnL Snapshot</b>\n"
                             f"Total Unrealized: <code>{'+' if total_pnl >= 0 else ''}${total_pnl:.2f} ({'+' if total_pnl >= 0 else ''}{total_pnl_pct:.2f}%)</code>"
                         )
                         await self.send_photo(client, chat_id, image_path, caption)
@@ -1068,7 +1107,7 @@ class TelegramPollingRunner:
             breaker_icon = (
                 "🚨 TRIPPED (HALTED)"
                 if (risk_engine and risk_engine.circuit_breaker_active)
-                else "🟢 ACTIVE (SAFE)"
+                else " ACTIVE (SAFE)"
             )
             drawdown_str = (
                 f"{risk_engine.current_drawdown_pct * 100:.2f}%"
@@ -1398,7 +1437,7 @@ async def start_combined_services(runner: TelegramPollingRunner) -> None:
                         )
                     elif hasattr(notifier, "send_telegram_message"):
                         msg = (
-                            "📡 <b>[HEARTBEAT] MONEY For HONEY Engine Live & Scanning</b>\n"
+                            " <b>[HEARTBEAT] MONEY For HONEY Engine Live & Scanning</b>\n"
                             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             "Autonomous Quantitative Market Scanner is ACTIVE.\n"
                             "• Regime: Multi-timeframe Breakout & Mean Reversion\n"
